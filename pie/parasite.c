@@ -8,6 +8,7 @@
 
 #include "syscall.h"
 #include "parasite.h"
+#include "lock.h"
 #include "log.h"
 
 #include <string.h>
@@ -19,6 +20,11 @@ static int tsock = -1;
 static struct tid_state_s {
 	pid_t		real;
 	pid_t		tid;
+
+	futex_t		cmd;
+	futex_t		ack;
+	int		ret;
+
 	bool		use_sig_blocked;
 	k_rtsigset_t	sig_blocked;
 	void		*next;
