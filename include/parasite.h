@@ -110,6 +110,7 @@ struct parasite_dump_creds {
 
 struct parasite_dump_thread {
 	unsigned int		*tid_addr;
+	pid_t			real;
 	pid_t			tid;
 	k_rtsigset_t		blocked;
 	u32			tls;

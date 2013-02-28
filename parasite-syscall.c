@@ -362,6 +362,7 @@ int parasite_dump_thread_seized(struct parasite_ctl *ctl, struct pid *tid,
 	int ret;
 
 	args = parasite_args(ctl, struct parasite_dump_thread);
+	args->real = tid->real;
 
 	ret = parasite_execute_trap_by_pid(PARASITE_CMD_DUMP_THREAD, ctl, tid->real);
 
@@ -563,12 +564,16 @@ int parasite_init_threads_seized(struct parasite_ctl *ctl, struct pstree_item *i
 
 int parasite_fini_threads_seized(struct parasite_ctl *ctl, struct pstree_item *item)
 {
+	struct parasite_init_args *args;
 	int ret = 0, i;
+
+	args = parasite_args(ctl, struct parasite_init_args);
 
 	for (i = 0; i < item->nr_threads; i++) {
 		if (item->pid.real == item->threads[i].real)
 			continue;
 
+		args->real = item->threads[i].real;
 		ret = parasite_execute_trap_by_pid(PARASITE_CMD_FINI_THREAD, ctl,
 					      item->threads[i].real);
 		/*
@@ -593,6 +598,16 @@ int parasite_fini_threads_seized(struct parasite_ctl *ctl, struct pstree_item *i
 	return ret;
 }
 
+static int parasite_fini_seized(struct parasite_ctl *ctl)
+{
+	struct parasite_init_args *args;
+
+	args = parasite_args(ctl, struct parasite_init_args);
+	args->real = ctl->pid.real;
+
+	return parasite_execute_trap(PARASITE_CMD_FINI, ctl);
+}
+
 int parasite_cure_seized(struct parasite_ctl *ctl, struct pstree_item *item)
 {
 	int ret = 0;
@@ -602,7 +617,7 @@ int parasite_cure_seized(struct parasite_ctl *ctl, struct pstree_item *item)
 	if (ctl->parasite_ip) {
 		ctl->signals_blocked = 0;
 		parasite_fini_threads_seized(ctl, item);
-		parasite_execute_trap(PARASITE_CMD_FINI, ctl);
+		parasite_fini_seized(ctl);
 	}
 
 	if (ctl->remote_map) {

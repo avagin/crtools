@@ -21,6 +21,7 @@ static struct tid_state_s {
 	pid_t		tid;
 	bool		use_sig_blocked;
 	k_rtsigset_t	sig_blocked;
+	void		*next;
 	unsigned char	stack[PARASITE_STACK_SIZE] __aligned(8);
 } *tid_state;
 
@@ -35,6 +36,8 @@ static unsigned int next_tid_state;
 #ifndef SPLICE_F_GIFT
 #define SPLICE_F_GIFT	0x08
 #endif
+
+static struct tid_state_s *tid_table[512];
 
 static int mprotect_vmas(struct parasite_mprotect_args *args)
 {
@@ -170,18 +173,23 @@ static int drain_fds(struct parasite_drain_fd *args)
 	return ret;
 }
 
-static struct tid_state_s *find_thread_state(pid_t tid)
+static void hash_thread_state(struct tid_state_s *s)
 {
-	unsigned int i;
+	unsigned int pos = s->real % ARRAY_SIZE(tid_table);
+	struct tid_state_s *next = tid_table[pos];
 
-	/*
-	 * FIXME
-	 *
-	 * We need a hash here rather
-	 */
-	for (i = 0; i < next_tid_state; i++) {
-		if (tid_state[i].tid == tid)
-			return &tid_state[i];
+	tid_table[pos] = s;
+	s->next = next;
+}
+
+static struct tid_state_s *find_thread_state(pid_t real)
+{
+	unsigned int pos = real % ARRAY_SIZE(tid_table);
+	struct tid_state_s *s;
+
+	for (s = tid_table[pos]; s; s = s->next) {
+		if (s->real == real)
+			return s;
 	}
 
 	return NULL;
@@ -193,7 +201,7 @@ static int dump_thread(struct parasite_dump_thread *args)
 	struct tid_state_s *s;
 	int ret;
 
-	s = find_thread_state(tid);
+	s = find_thread_state(args->real);
 	if (!s)
 		return -ENOENT;
 
@@ -228,16 +236,18 @@ static int init_thread(struct parasite_init_args *args)
 	tid_state[next_tid_state].tid = sys_gettid();
 	tid_state[next_tid_state].real = args->real;
 
+	hash_thread_state(&tid_state[next_tid_state]);
+
 	next_tid_state++;
 
 	return ret;
 }
 
-static int fini_thread(void)
+static int fini_thread(struct parasite_init_args *args)
 {
 	struct tid_state_s *s;
 
-	s = find_thread_state(sys_gettid());
+	s = find_thread_state(args->real);
 	if (!s)
 		return -ENOENT;
 
@@ -415,11 +425,11 @@ static int parasite_cfg_log(struct parasite_log_args *args)
 	return ret;
 }
 
-static int fini(void)
+static int fini(struct parasite_init_args *args)
 {
 	int ret;
 
-	ret = fini_thread();
+	ret = fini_thread(args);
 
 	sys_munmap(tid_state, TID_STATE_SIZE(nr_tid_state));
 	log_set_fd(-1);
@@ -438,9 +448,9 @@ int __used parasite_service(unsigned int cmd, void *args)
 	case PARASITE_CMD_INIT_THREAD:
 		return init_thread(args);
 	case PARASITE_CMD_FINI:
-		return fini();
+		return fini(args);
 	case PARASITE_CMD_FINI_THREAD:
-		return fini_thread();
+		return fini_thread(args);
 	case PARASITE_CMD_CFG_LOG:
 		return parasite_cfg_log(args);
 	case PARASITE_CMD_DUMPPAGES:
