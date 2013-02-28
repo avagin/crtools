@@ -242,6 +242,9 @@ static int init_thread(struct parasite_init_args *args)
 	tid_state[next_tid_state].tid = sys_gettid();
 	tid_state[next_tid_state].real = args->real;
 
+	futex_set(&tid_state[next_tid_state].cmd, PARASITE_CMD_IDLE);
+	futex_set(&tid_state[next_tid_state].ack, PARASITE_CMD_IDLE);
+
 	hash_thread_state(&tid_state[next_tid_state]);
 
 	next_tid_state++;
