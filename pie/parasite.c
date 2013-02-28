@@ -17,9 +17,11 @@
 static int tsock = -1;
 
 static struct tid_state_s {
+	pid_t		real;
 	pid_t		tid;
 	bool		use_sig_blocked;
 	k_rtsigset_t	sig_blocked;
+	unsigned char	stack[PARASITE_STACK_SIZE] __aligned(8);
 } *tid_state;
 
 static unsigned int nr_tid_state;
