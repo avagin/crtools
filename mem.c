@@ -281,7 +281,7 @@ static int parasite_mprotect_seized(struct parasite_ctl *ctl, struct vm_area_lis
 		p_vma++;
 	}
 
-	return parasite_execute(PARASITE_CMD_MPROTECT_VMAS, ctl);
+	return parasite_execute_trap(PARASITE_CMD_MPROTECT_VMAS, ctl);
 }
 
 static int __parasite_dump_pages_seized(struct parasite_ctl *ctl,
@@ -351,7 +351,7 @@ static int __parasite_dump_pages_seized(struct parasite_ctl *ctl,
 		pr_debug("PPB: %d pages %d segs %u pipe %d off\n",
 				args->nr_pages, args->nr, ppb->pipe_size, args->off);
 
-		ret = parasite_execute(PARASITE_CMD_DUMPPAGES, ctl);
+		ret = parasite_execute_trap(PARASITE_CMD_DUMPPAGES, ctl);
 		if (ret < 0)
 			goto out_pp;
 
