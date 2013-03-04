@@ -281,7 +281,7 @@ static int parasite_mprotect_seized(struct parasite_ctl *ctl, struct vm_area_lis
 		p_vma++;
 	}
 
-	return parasite_execute_trap(PARASITE_CMD_MPROTECT_VMAS, ctl);
+	return parasite_execute_daemon(PARASITE_CMD_MPROTECT_VMAS, ctl);
 }
 
 static int __parasite_dump_pages_seized(struct parasite_ctl *ctl,
@@ -340,24 +340,30 @@ static int __parasite_dump_pages_seized(struct parasite_ctl *ctl,
 
 	debug_show_page_pipe(pp);
 
+	pr_err("start\n");
+
 	args->off = 0;
 	list_for_each_entry(ppb, &pp->bufs, l) {
-		ret = parasite_send_fd(ctl, ppb->p[1]);
-		if (ret)
-			goto out_pp;
-
 		args->nr = ppb->nr_segs;
 		args->nr_pages = ppb->pages_in;
 		pr_debug("PPB: %d pages %d segs %u pipe %d off\n",
 				args->nr_pages, args->nr, ppb->pipe_size, args->off);
 
-		ret = parasite_execute_trap(PARASITE_CMD_DUMPPAGES, ctl);
+		ret = __parasite_execute_daemon_by_pid(PARASITE_CMD_DUMPPAGES, ctl, ctl->pid.real, false);
+		if (ret < 0)
+			goto out_pp;
+		ret = parasite_send_fd(ctl, ppb->p[1]);
+		if (ret)
+			goto out_pp;
+
+		ret = __parasite_execute_daemon_wait_ack(PARASITE_CMD_DUMPPAGES, ctl, ctl->pid.real);
 		if (ret < 0)
 			goto out_pp;
 
 		args->off += args->nr;
 	}
 
+	pr_err("end\n");
 	ret = open_page_xfer(&xfer, CR_FD_PAGEMAP, ctl->pid.virt);
 	if (ret < 0)
 		goto out_pp;

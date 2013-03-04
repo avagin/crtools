@@ -352,7 +352,7 @@ EOF
 
 
 	save_fds $PID  $ddump/dump.fd
-	setsid $CRTOOLS_CPT dump $opts --file-locks --tcp-established $linkremap \
+	strace -fo strace.log $CRTOOLS_CPT dump $opts --file-locks --tcp-established $linkremap \
 		-x --evasive-devices -D $ddump -o dump.log -v 4 -t $PID $args $ARGS || {
 		echo WARNING: process $tname is left running for your debugging needs
 		return 1

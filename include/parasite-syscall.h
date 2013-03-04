@@ -32,8 +32,14 @@ extern int parasite_dump_sigacts_seized(struct parasite_ctl *ctl, struct cr_fdse
 extern int parasite_dump_itimers_seized(struct parasite_ctl *ctl, struct cr_fdset *cr_fdset);
 
 void *parasite_args_s(struct parasite_ctl *ctl, int args_size);
-int parasite_execute_trap(unsigned int cmd, struct parasite_ctl *ctl);
+int parasite_execute_daemon(unsigned int cmd, struct parasite_ctl *ctl);
 int parasite_send_fd(struct parasite_ctl *ctl, int fd);
+int __parasite_execute_daemon_by_pid(unsigned int cmd,
+					    struct parasite_ctl *ctl,
+					    pid_t pid, bool wait_ack);
+int __parasite_execute_daemon_wait_ack(unsigned int cmd,
+					      struct parasite_ctl *ctl,
+					      pid_t pid);
 
 struct parasite_dump_misc;
 struct vm_area_list;

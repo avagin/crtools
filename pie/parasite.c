@@ -252,14 +252,8 @@ static int init_thread(struct parasite_init_args *args)
 	return ret;
 }
 
-static int fini_thread(struct parasite_init_args *args)
+static int fini_thread(struct tid_state_s *s)
 {
-	struct tid_state_s *s;
-
-	s = find_thread_state(args->real);
-	if (!s)
-		return -ENOENT;
-
 	if (s->use_sig_blocked)
 		return sys_sigprocmask(SIG_SETMASK, &s->sig_blocked,
 				       NULL, sizeof(k_rtsigset_t));
@@ -434,17 +428,220 @@ static int parasite_cfg_log(struct parasite_log_args *args)
 	return ret;
 }
 
-static int fini(struct parasite_init_args *args)
+static int fini(struct tid_state_s *s)
+{
+	log_set_fd(-1);
+
+	return fini_thread(s);
+}
+
+static int __parasite_daemon_reply_ack(unsigned int id, unsigned int cmd, int err)
+{
+	struct ctl_msg m;
+	int ret;
+
+	m = ctl_msg_ack(id, cmd, err);
+	ret = sys_sendto(tsock, &m, sizeof(m), 0, NULL, 0);
+	if (ret != sizeof(m)) {
+		pr_err("Sent only %d bytes while %d expected\n",
+			ret, (int)sizeof(m));
+		return -1;
+	}
+
+	pr_debug("__sent ack msg: %d %d %d %d\n",
+		 m.id, m.cmd, m.ack, m.err);
+
+	return 0;
+}
+
+static int __parasite_daemon_wait_msg(struct ctl_msg *m)
 {
 	int ret;
 
-	ret = fini_thread(args);
+	pr_debug("Daemon wais for command\n");
 
-	sys_munmap(tid_state, TID_STATE_SIZE(nr_tid_state));
-	log_set_fd(-1);
-	sys_close(tsock);
+	while (1) {
+		*m = (struct ctl_msg){ };
+		ret = sys_recvfrom(tsock, m, sizeof(*m), MSG_WAITALL, NULL, 0);
+		if (ret != sizeof(*m)) {
+			pr_err("Trimmed message received (%d/%d)\n",
+			       (int)sizeof(*m), ret);
+			return 0;
+		}
 
-	return ret;
+		pr_debug("__fetched msg: %d %d %d %d\n",
+			 m->id, m->cmd, m->ack, m->err);
+		return 0;
+	}
+
+	return -1;
+}
+
+static int __parasite_daemon_thread_wait_cmd(struct tid_state_s *s)
+{
+	futex_wait_while_lt(&s->cmd, PARASITE_CMD_DAEMONIZED);
+	return futex_get(&s->cmd);
+}
+
+static void __parasite_daemon_thread_ack(struct tid_state_s *s, int ret)
+{
+	s->ret = ret;
+	futex_set(&s->ack, PARASITE_CMD_IDLE);
+	futex_set_and_wake(&s->cmd, PARASITE_CMD_IDLE);
+	futex_wait_until(&s->ack, PARASITE_CMD_ACK);
+}
+
+static unsigned long noinline __used
+__parasite_daemon_thread(void *args, struct tid_state_s *s, unsigned long oldstack)
+{
+	pr_debug("Running daemon thread %d\n", s->real);
+
+	/* Reply we're alive */
+	if (__parasite_daemon_reply_ack(s->real, PARASITE_CMD_DAEMONIZE, 0))
+		return oldstack;
+
+	while (1) {
+		int ret, cmd;
+
+		cmd = __parasite_daemon_thread_wait_cmd(s);
+
+		pr_debug("Command %d in daemon thread %d\n", cmd, s->real);
+
+		switch (cmd) {
+		case PARASITE_CMD_DUMP_THREAD:
+			ret = dump_thread(args);
+			break;
+		case PARASITE_CMD_FINI_THREAD:
+			__parasite_daemon_thread_ack(s, 0);
+			fini_thread(s);
+			return oldstack;
+		default:
+			pr_err("Unknown command in parasite daemon thread: %d\n", cmd);
+			ret = -1;
+			break;
+		}
+		__parasite_daemon_thread_ack(s, ret);
+	}
+
+	return oldstack;
+}
+
+static int __parasite_execute_thread(struct ctl_msg *m)
+{
+	struct tid_state_s *s = find_thread_state(m->id);
+	if (!s)
+		return -ENOENT;
+
+	pr_debug("Wake thread %d daemon with command %d\n", s->real, m->cmd);
+	futex_set_and_wake(&s->cmd, m->cmd);
+
+	pr_debug("Wait thread %d for PARASITE_CMD_IDLE\n", s->real);
+	futex_wait_until(&s->cmd, PARASITE_CMD_IDLE);
+
+	pr_debug("Wake thread %d daemon with " __stringify_1(PARASITE_CMD_ACK) "\n", s->real);
+	futex_set_and_wake(&s->ack, PARASITE_CMD_ACK);
+
+	return s->ret;
+}
+
+static unsigned long noinline __used
+__parasite_daemon_thread_leader(void *args, struct tid_state_s *s, unsigned long oldstack)
+{
+	struct ctl_msg m = { };
+	int ret = -1;
+
+	pr_debug("Running daemon thread leader %d\n", s->real);
+
+	/* Reply we're alive */
+	if (__parasite_daemon_reply_ack(s->real, PARASITE_CMD_DAEMONIZE, 0))
+		return oldstack;
+
+	while (1) {
+		if (__parasite_daemon_wait_msg(&m))
+			break;
+
+		switch (m.cmd) {
+		case PARASITE_CMD_FINI:
+			ret = fini(s);
+			sys_close(tsock);
+			/*
+			 * No ACK here since we're getting out.
+			 */
+			break;
+		case PARASITE_CMD_FINI_THREAD:
+			ret = __parasite_execute_thread(&m);
+			break;
+		case PARASITE_CMD_DUMP_THREAD:
+			ret = __parasite_execute_thread(&m);
+			break;
+		case PARASITE_CMD_DUMPPAGES:
+			ret = dump_pages(args);
+			break;
+		case PARASITE_CMD_MPROTECT_VMAS:
+			ret = mprotect_vmas(args);
+			break;
+		case PARASITE_CMD_DUMP_SIGACTS:
+			ret = dump_sigact(args);
+			break;
+		case PARASITE_CMD_DUMP_ITIMERS:
+			ret = dump_itimers(args);
+			break;
+		case PARASITE_CMD_DUMP_MISC:
+			ret = dump_misc(args);
+			break;
+		case PARASITE_CMD_DUMP_CREDS:
+			ret = dump_creds(args);
+			break;
+		case PARASITE_CMD_DRAIN_FDS:
+			ret = drain_fds(args);
+			break;
+		case PARASITE_CMD_GET_PROC_FD:
+			ret = parasite_get_proc_fd();
+			break;
+		case PARASITE_CMD_DUMP_TTY:
+			ret = parasite_dump_tty(args);
+			break;
+		default:
+			pr_err("Unknown command in parasite daemon thread leader: %d\n", m.cmd);
+			ret = -1;
+			break;
+		}
+
+		if (__parasite_daemon_reply_ack(m.id, m.cmd, ret))
+			break;
+	}
+
+	return oldstack;
+}
+
+static int noinline parasite_daemon(struct parasite_init_args *args)
+{
+	struct tid_state_s *s;
+	unsigned long new_sp = 0;
+	bool is_leader = false;
+
+	s = find_thread_state(args->real);
+	if (!s)
+		return -ENOENT;
+
+	if (s->real == thread_leader->real)
+		is_leader = true;
+
+	pr_info("Parasite entering daemon mode for %d\n", s->real);
+	new_sp = (unsigned long)(void *)&s->stack[PARASITE_STACK_SIZE - 8];
+
+	if (is_leader)
+		call_daemon_thread(new_sp, args, s, __parasite_daemon_thread_leader);
+	else
+		call_daemon_thread(new_sp, args, s, __parasite_daemon_thread);
+
+	pr_info("Parasite leaving daemon mode for %d\n", s->real);
+
+	if (is_leader)
+		sys_munmap(tid_state, TID_STATE_SIZE(nr_tid_state));
+
+	asm_trap();
+	return 0;
 }
 
 int __used parasite_service(unsigned int cmd, void *args)
@@ -456,32 +653,10 @@ int __used parasite_service(unsigned int cmd, void *args)
 		return init(args);
 	case PARASITE_CMD_INIT_THREAD:
 		return init_thread(args);
-	case PARASITE_CMD_FINI:
-		return fini(args);
-	case PARASITE_CMD_FINI_THREAD:
-		return fini_thread(args);
 	case PARASITE_CMD_CFG_LOG:
 		return parasite_cfg_log(args);
-	case PARASITE_CMD_DUMPPAGES:
-		return dump_pages(args);
-	case PARASITE_CMD_MPROTECT_VMAS:
-		return mprotect_vmas(args);
-	case PARASITE_CMD_DUMP_SIGACTS:
-		return dump_sigact(args);
-	case PARASITE_CMD_DUMP_ITIMERS:
-		return dump_itimers(args);
-	case PARASITE_CMD_DUMP_MISC:
-		return dump_misc(args);
-	case PARASITE_CMD_DUMP_CREDS:
-		return dump_creds(args);
-	case PARASITE_CMD_DUMP_THREAD:
-		return dump_thread(args);
-	case PARASITE_CMD_DRAIN_FDS:
-		return drain_fds(args);
-	case PARASITE_CMD_GET_PROC_FD:
-		return parasite_get_proc_fd();
-	case PARASITE_CMD_DUMP_TTY:
-		return parasite_dump_tty(args);
+	case PARASITE_CMD_DAEMONIZE:
+		return parasite_daemon(args);
 	}
 
 	pr_err("Unknown command to parasite: %d\n", cmd);
