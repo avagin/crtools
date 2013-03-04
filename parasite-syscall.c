@@ -296,6 +296,7 @@ static int parasite_init(struct parasite_ctl *ctl, pid_t pid, int nr_threads)
 	args->h_addr_len = gen_parasite_saddr(&args->h_addr, getpid());
 	args->p_addr_len = gen_parasite_saddr(&args->p_addr, pid);
 	args->nr_threads = nr_threads;
+	args->real = pid;
 
 	if (sock == -1) {
 		int rst = -1;
@@ -538,12 +539,16 @@ int parasite_get_proc_fd_seized(struct parasite_ctl *ctl)
 
 int parasite_init_threads_seized(struct parasite_ctl *ctl, struct pstree_item *item)
 {
+	struct parasite_init_args *args;
 	int ret = 0, i;
+
+	args = parasite_args(ctl, struct parasite_init_args);
 
 	for (i = 0; i < item->nr_threads; i++) {
 		if (item->pid.real == item->threads[i].real)
 			continue;
 
+		args->real = item->threads[i].real;
 		ret = parasite_execute_trap_by_pid(PARASITE_CMD_INIT_THREAD, ctl,
 					      item->threads[i].real);
 		if (ret) {

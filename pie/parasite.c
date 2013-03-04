@@ -211,7 +211,7 @@ static int dump_thread(struct parasite_dump_thread *args)
 	return 0;
 }
 
-static int init_thread(void)
+static int init_thread(struct parasite_init_args *args)
 {
 	k_rtsigset_t to_block;
 	int ret;
@@ -226,6 +226,7 @@ static int init_thread(void)
 	if (ret >= 0)
 		tid_state[next_tid_state].use_sig_blocked = true;
 	tid_state[next_tid_state].tid = sys_gettid();
+	tid_state[next_tid_state].real = args->real;
 
 	next_tid_state++;
 
@@ -263,7 +264,7 @@ static int init(struct parasite_init_args *args)
 
 	nr_tid_state = args->nr_threads;
 
-	ret = init_thread();
+	ret = init_thread(args);
 	if (ret < 0)
 		return ret;
 
@@ -435,7 +436,7 @@ int __used parasite_service(unsigned int cmd, void *args)
 	case PARASITE_CMD_INIT:
 		return init(args);
 	case PARASITE_CMD_INIT_THREAD:
-		return init_thread();
+		return init_thread(args);
 	case PARASITE_CMD_FINI:
 		return fini();
 	case PARASITE_CMD_FINI_THREAD:

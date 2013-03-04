@@ -47,6 +47,7 @@ struct parasite_init_args {
 	struct sockaddr_un	p_addr;
 
 	int			nr_threads;
+	pid_t			real;
 };
 
 struct parasite_log_args {
