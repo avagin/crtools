@@ -64,6 +64,7 @@
 #define RLIMIT_MAGIC		0x57113925 /* Rostov */
 #define FANOTIFY_MAGIC		0x55096122 /* Chelyabinsk */
 #define FANOTIFY_MARK_MAGIC	0x56506035 /* Yekaterinburg */
+#define NETLINKSK_MAGIC		0x58005614 /* Perm */
 
 #define IFADDR_MAGIC		RAW_IMAGE_MAGIC
 #define ROUTE_MAGIC		RAW_IMAGE_MAGIC
