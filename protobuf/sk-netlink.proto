@@ -6,7 +6,6 @@ message netlink_sk_entry {
 	required uint32			ino		=  2;
 	required uint32			protocol	=  3;
 	required uint32			state		=  4;
-	required uint32			type		=  5;
 	required uint32			flags		=  6;
 	required uint32			portid		=  7;
 	repeated uint32			groups		=  8;
