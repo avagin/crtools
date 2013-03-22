@@ -1,5 +1,6 @@
 #define _GNU_SOURCE
 #include <unistd.h>
+#include <sched.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/wait.h>
@@ -24,7 +25,8 @@ struct testcase {
 	pid_t sid;
 	pid_t born_sid;
 	pid_t pgid;
-	int alive;
+	int alive:1,
+	    clone_parent:1;
 	struct master master;
 	futex_t futex;
 };
@@ -41,22 +43,25 @@ enum {
 static struct testcase *testcases;
 static futex_t *fstate;
 static struct testcase __testcases[] = {
-	{ 2,  1,  2,  1,  2, 1 },  /* session00			*/
-	{ 4,  2,  4,  2,  4, 1 },  /*  |\_session00		*/
-	{15,  4,  4,  4, 15, 1 },  /*  |  |\_session00		*/
-	{16,  4,  4,  4, 15, 1 },  /*  |   \_session00		*/
-	{17,  4,  4,  4, 17, 0 },  /*  |  |\_session00		*/
-	{18,  4,  4,  4, 17, 1 },  /*  |   \_session00		*/
-	{ 5,  2,  2,  2,  2, 1 },  /*  |\_session00		*/
-	{ 8,  2,  8,  2,  8, 1 },  /*  |\_session00		*/
-	{ 9,  8,  2,  2,  2, 1 },  /*  |   \_session00		*/
-	{10,  2, 10,  2, 10, 1 },  /*  |\_session00		*/
-	{11, 10, 11,  2, 11, 1 },  /*  |    \_session00		*/
-	{12, 11,  2,  2,  2, 1 },  /*  |        \_session00	*/
-	{13,  2,  2,  2,  2, 0 },  /*   \_session00		*/
-	{ 3, 13,  2,  2,  2, 1 },  /* session00			*/
-	{ 6,  2,  6,  2,  6, 0 },  /*   \_session00		*/
-	{14,  6,  6,  6,  6, 1 },  /* session00			*/
+	{ 2,  1,  2,  1,  2, 1, 0 },  /* session00			*/
+	{ 4,  2,  4,  2,  4, 1, 0 },  /*  |\_session00			*/
+	{19,  4,  4,  4,  4, 1, 1 },  /*  |\_session00			*/
+#if 0
+	{15,  4,  4,  4, 15, 1, 0 },  /*  |  |\_session00		*/
+	{16,  4,  4,  4, 15, 1, 0 },  /*  |   \_session00		*/
+	{17,  4,  4,  4, 17, 0, 0 },  /*  |  |\_session00		*/
+	{18,  4,  4,  4, 17, 1, 0 },  /*  |   \_session00		*/
+	{ 5,  2,  2,  2,  2, 1, 0 },  /*  |\_session00			*/
+	{ 8,  2,  8,  2,  8, 1, 0 },  /*  |\_session00			*/
+	{ 9,  8,  2,  2,  2, 1, 0 },  /*  |   \_session00		*/
+	{10,  2, 10,  2, 10, 1, 0 },  /*  |\_session00			*/
+	{11, 10, 11,  2, 11, 1, 0 },  /*  |    \_session00		*/
+	{12, 11,  2,  2,  2, 1, 0 },  /*  |        \_session00		*/
+	{13,  2,  2,  2,  2, 0, 0 },  /*   \_session00			*/
+	{ 3, 13,  2,  2,  2, 1, 0 },  /* session00			*/
+	{ 6,  2,  6,  2,  6, 0, 0 },  /*   \_session00			*/
+	{14,  6,  6,  6,  6, 1, 0 },  /* session00			*/
+#endif
 };
 
 #define TESTS (sizeof(__testcases) / sizeof(struct testcase))
@@ -64,10 +69,28 @@ static struct testcase __testcases[] = {
 #define check(n, a, b) do { if ((a) != (b)) { err("%s mismatch %d != %d", n, a, b); goto err; } } while (0)
 
 static int child(const int c);
+#define CLONE_STACK_SIZE	4096
+/* All arguments should be above stack, because it grows down */
+struct clone_args {
+	char stack[CLONE_STACK_SIZE];
+	char stack_ptr[0];
+	int i;
+};
+
+int clone_func(void *_arg)
+{
+	struct clone_args *args = (struct clone_args *) _arg;
+
+	test_msg("I'm %d with pid %d\n", args->i, getpid());
+	child(args->i);
+	exit(0);
+}
+
 static int fork_children(struct testcase *t, int leader)
 {
 	int i;
 	pid_t cid;
+	struct clone_args args;
 
 	for (i = 0; i < TESTS; i++) {
 		if (t->pid != testcases[i].ppid)
@@ -76,7 +99,12 @@ static int fork_children(struct testcase *t, int leader)
 		if (leader ^ (t->pid == testcases[i].born_sid))
 				continue;
 
-		cid = test_fork_id(i);
+		if (testcases[i].clone_parent) {
+			args.i = i;
+			cid = clone(clone_func, args.stack_ptr,
+					CLONE_PARENT | SIGCHLD, &args);
+		} else
+			cid = test_fork_id(i);
 		if (cid < 0)
 			goto err;
 		if (cid == 0) {
@@ -112,8 +140,8 @@ static int child(const int c)
 	if (t->pid == t->pgid) {
 		if (getpid() != getpgid(getpid()))
 			if (setpgid(getpid(), getpid()) < 0) {
-				err("setpgid() failed");
-				goto err;
+				err("%d: setpgid() failed", c);
+//				goto err;
 			}
 		t->master.pgid = t->master.pid;
 	}
@@ -133,7 +161,7 @@ static int child(const int c)
 		if (getpgid(getpid()) != testcases[i].master.pid)
 			if (setpgid(getpid(), testcases[i].master.pid) < 0) {
 				err("setpgid() failed (%d) (%d)\n", c, i);
-				goto err;
+//				goto err;
 			}
 
 		t->master.pgid	= testcases[i].master.pid;
