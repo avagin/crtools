@@ -385,43 +385,35 @@ static int prepare_pstree_ids(void)
 			if (item->parent->sid == item->sid)
 				continue;
 
-			list_for_each_entry(child, &item->parent->children, sibling) {
-				if (child == item)
-					continue;
-				if (child->pid.virt != child->sid)
-					continue;
-				if (item->sid != child->sid)
-					continue;
-				break;
-			}
+			parent = pstree_hash_find(item->sid);
+			if (parent) {
 
-			if (&child->sibling != &item->parent->children) {
-				tmp = item;
-				if (item->sibling.prev != &item->parent->children)
-					item = list_entry(item->sibling.prev, struct pstree_item, sibling);
-				else
-					item = item->parent;
-				tmp->rst->clone_flags |= CLONE_PARENT;
-				tmp->parent = child;
-				list_move(&tmp->sibling, &child->children);
-				continue;
-			}
-
-			/* the task could fork a child before and after setsid() */
-			parent = item->parent;
-			while (parent && parent->pid.virt != item->sid) {
-				if (parent->born_sid != -1 && parent->born_sid != item->sid) {
-					pr_err("Can't determinate with which sid (%d or %d)"
-						"the process %d was born\n",
-						parent->born_sid, item->sid, parent->pid.virt);
-					return -1;
+				if (parent->parent == item->parent) {
+					tmp = item;
+					if (item->sibling.prev != &item->parent->children)
+						item = list_entry(item->sibling.prev, struct pstree_item, sibling);
+					else
+						item = item->parent;
+					tmp->rst->clone_flags |= CLONE_PARENT;
+					tmp->parent = parent;
+					list_move(&tmp->sibling, &parent->children);
+					continue;
 				}
-				parent->born_sid = item->sid;
-				pr_info("%d was born with sid %d\n", parent->pid.virt, item->sid);
-				parent = parent->parent;
-			}
 
-			if (parent == NULL) {
+				/* the task could fork a child before and after setsid() */
+				tmp = item->parent;
+				while (tmp && tmp->pid.virt != item->sid) {
+					if (tmp->born_sid != -1 && tmp->born_sid != item->sid) {
+						pr_err("Can't determinate with which sid (%d or %d)"
+							"the process %d was born\n",
+							tmp->born_sid, item->sid, tmp->pid.virt);
+						return -1;
+					}
+					tmp->born_sid = item->sid;
+					pr_info("%d was born with sid %d\n", tmp->pid.virt, item->sid);
+					tmp = tmp->parent;
+				}
+			} else {
 				pr_err("Can't find a session leader for %d\n", item->sid);
 				return -1;
 			}
