@@ -28,6 +28,8 @@ struct pid {
 };
 
 struct pstree_item {
+	struct pstree_item	*hash_next;
+
 	struct pstree_item	*parent;
 	struct list_head	children;	/* list of my children */
 	struct list_head	sibling;	/* linkage in my parent's children list */

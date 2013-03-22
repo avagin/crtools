@@ -16,6 +16,29 @@
 
 struct pstree_item *root_item;
 
+#define PSTREE_HASH_SIZE	32
+static struct pstree_item *pstree_hash[PSTREE_HASH_SIZE];
+
+struct pstree_item *pstree_hash_find(pid_t pid)
+{
+	struct pstree_item *p;
+
+	for (p = pstree_hash[pid % PSTREE_HASH_SIZE]; p; p = p->hash_next) {
+		if (p->pid.virt == pid)
+			return p;
+	}
+
+	return NULL;
+}
+
+void pstree_hash_add(struct pstree_item *p)
+{
+	int hash = p->pid.virt % PSTREE_HASH_SIZE;
+
+	p->hash_next = pstree_hash[hash];
+	pstree_hash[hash] = p;
+}
+
 void core_entry_free(CoreEntry *core)
 {
 	if (core) {
@@ -215,6 +238,7 @@ static int read_pstree_image(void)
 
 		pi->pid.virt = e->pid;
 		max_pid = max((int)e->pid, max_pid);
+		pstree_hash_add(pi);
 
 		pi->pgid = e->pgid;
 		max_pid = max((int)e->pgid, max_pid);
@@ -243,10 +267,7 @@ static int read_pstree_image(void)
 			}
 
 			if (parent == NULL) {
-				for_each_pstree_item(parent) {
-					if (parent->pid.virt == e->ppid)
-						break;
-				}
+				parent = pstree_hash_find(e->ppid);
 
 				if (parent == NULL) {
 					pr_err("Can't find a parent for %d\n", pi->pid.virt);
