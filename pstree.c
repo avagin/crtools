@@ -364,6 +364,28 @@ static int prepare_pstree_ids(void)
 			if (item->parent->sid == item->sid)
 				continue;
 
+			list_for_each_entry(child, &item->parent->children, sibling) {
+				if (child == item)
+					continue;
+				if (child->pid.virt != child->sid)
+					continue;
+				if (item->sid != child->sid)
+					continue;
+				break;
+			}
+
+			if (&child->sibling != &item->parent->children) {
+				tmp = item;
+				if (item->sibling.prev != &item->parent->children)
+					item = list_entry(item->sibling.prev, struct pstree_item, sibling);
+				else
+					item = item->parent;
+				tmp->rst->clone_flags |= CLONE_PARENT;
+				tmp->parent = child;
+				list_move(&tmp->sibling, &child->children);
+				continue;
+			}
+
 			/* the task could fork a child before and after setsid() */
 			parent = item->parent;
 			while (parent && parent->pid.virt != item->sid) {
@@ -527,7 +549,7 @@ static int prepare_pstree_kobj_ids(void)
 		}
 
 set_mask:
-		item->rst->clone_flags = cflags;
+		item->rst->clone_flags |= cflags;
 
 		/*
 		 * Workaround for current namespaces model --
