@@ -371,6 +371,7 @@ static int prepare_pstree_ids(void)
 		}
 	}
 
+again:
 	/* Try to connect helpers to session leaders */
 	for_each_pstree_item(item) {
 		if (!item->parent) /* skip the root task */
@@ -387,7 +388,6 @@ static int prepare_pstree_ids(void)
 
 			parent = pstree_hash_find(item->sid);
 			if (parent) {
-
 				if (parent->parent == item->parent) {
 					tmp = item;
 					if (item->sibling.prev != &item->parent->children)
@@ -397,12 +397,14 @@ static int prepare_pstree_ids(void)
 					tmp->rst->clone_flags |= CLONE_PARENT;
 					tmp->parent = parent;
 					list_move(&tmp->sibling, &parent->children);
+					pr_info("%d was forked from %d\n", tmp->pid.virt, parent->pid.virt);
 					continue;
 				}
 
 				/* the task could fork a child before and after setsid() */
 				tmp = item->parent;
-				while (tmp && tmp->pid.virt != item->sid) {
+				while (tmp &&   tmp->pid.virt != item->sid &&
+						tmp->born_sid != item->sid) {
 					if (tmp->born_sid != -1 && tmp->born_sid != item->sid) {
 						pr_err("Can't determinate with which sid (%d or %d)"
 							"the process %d was born\n",
@@ -411,6 +413,13 @@ static int prepare_pstree_ids(void)
 					}
 					tmp->born_sid = item->sid;
 					pr_info("%d was born with sid %d\n", tmp->pid.virt, item->sid);
+					if (tmp->parent == parent->parent) {
+						tmp->rst->clone_flags |= CLONE_PARENT;
+						tmp->parent = parent;
+						list_move(&tmp->sibling, &parent->children);
+						pr_info("%d was forked from %d\n", tmp->pid.virt, parent->pid.virt);
+						goto again;
+					}
 					tmp = tmp->parent;
 				}
 				if (tmp == NULL) {

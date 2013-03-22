@@ -45,7 +45,7 @@ static futex_t *fstate;
 static struct testcase __testcases[] = {
 	{ 2,  1,  2,  1,  2, 1, 0 },  /* session00			*/
 	{ 4,  2,  4,  2,  4, 1, 0 },  /*  |\_session00			*/
-//	{19,  4,  4,  4,  4, 1, 1 },  /*  |\_session00			*/
+	{19,  4,  4,  4,  4, 1, 1 },  /*  |\_session00			*/
 	{22,  4, 22,  4, 22, 1, 1 },  /*  |\_session00			*/
 	{23, 22,  4,  4,  4, 1, 0 },  /*  |\_session00			*/
 //	{20,  4, 20,  4, 20, 0, 0 },  /*  |\_session00			*/
