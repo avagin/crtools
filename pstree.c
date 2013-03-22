@@ -413,6 +413,10 @@ static int prepare_pstree_ids(void)
 					pr_info("%d was born with sid %d\n", tmp->pid.virt, item->sid);
 					tmp = tmp->parent;
 				}
+				if (tmp == NULL) {
+					pr_err("Can't find a session leader for %d\n", item->sid);
+					return -1;
+				}
 			} else {
 				pr_err("Can't find a session leader for %d\n", item->sid);
 				return -1;

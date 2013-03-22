@@ -45,10 +45,12 @@ static futex_t *fstate;
 static struct testcase __testcases[] = {
 	{ 2,  1,  2,  1,  2, 1, 0 },  /* session00			*/
 	{ 4,  2,  4,  2,  4, 1, 0 },  /*  |\_session00			*/
-	{19,  4,  4,  4,  4, 1, 1 },  /*  |\_session00			*/
+//	{19,  4,  4,  4,  4, 1, 1 },  /*  |\_session00			*/
+	{22,  4, 22,  4, 22, 1, 1 },  /*  |\_session00			*/
+	{23, 22,  4,  4,  4, 1, 0 },  /*  |\_session00			*/
 //	{20,  4, 20,  4, 20, 0, 0 },  /*  |\_session00			*/
 //	{21, 20, 20, 20, 20, 1, 1 },  /*  |\_session00			*/
-//#if 0
+#if 0
 	{15,  4,  4,  4, 15, 1, 0 },  /*  |  |\_session00		*/
 	{16,  4,  4,  4, 15, 1, 0 },  /*  |   \_session00		*/
 	{17,  4,  4,  4, 17, 0, 0 },  /*  |  |\_session00		*/
@@ -63,7 +65,7 @@ static struct testcase __testcases[] = {
 	{ 3, 13,  2,  2,  2, 1, 0 },  /* session00			*/
 	{ 6,  2,  6,  2,  6, 0, 0 },  /*   \_session00			*/
 	{14,  6,  6,  6,  6, 1, 0 },  /* session00			*/
-//#endif
+#endif
 };
 
 #define TESTS (sizeof(__testcases) / sizeof(struct testcase))
