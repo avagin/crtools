@@ -557,6 +557,34 @@ static int prepare_pstree_ids(void)
 				helper->pid.virt, helper->pgid);
 	}
 
+	i = 0;
+	item = root_item;
+	while (item) {
+
+		pr_err("%*c(%d,%d,%d,%c%c)\n", i * 4, ' ',
+			item->pid.virt, item->sid, item->pgid,
+			item->state == TASK_HELPER ? 'h' : ' ',
+			item->rst->clone_flags & CLONE_PARENT ? 'p' : ' ');
+
+		if (!list_empty(&item->children)) {
+			item = list_first_entry(&item->children, struct pstree_item, sibling);
+			i++;
+			continue;
+		}
+
+		while (item->parent) {
+			if (item->sibling.next != &item->parent->children) {
+				item = list_entry(item->sibling.next, struct pstree_item, sibling);
+				break;
+			}
+
+			item = item->parent;
+			i--;
+		}
+		if (item->parent == NULL)
+			break;
+	}
+
 	return 0;
 }
 

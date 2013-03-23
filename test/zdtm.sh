@@ -318,6 +318,8 @@ EOF
 		opts="--page-server --address 127.0.0.1 --port $PS_PORT"
 	fi
 
+	ps f -o pid,sid,comm -C session01
+	read
 
 	save_fds $PID  $ddump/dump.fd
 	setsid $CRTOOLS_CPT dump $opts --file-locks --tcp-established $linkremap \
@@ -330,6 +332,8 @@ EOF
 		wait $PS_PID
 	fi
 
+	ps f -o pid,sid,comm -C session01
+	read
 	if expr " $ARGS" : ' -s' > /dev/null; then
 		save_fds $PID  $ddump/dump.fd.after
 		diff_fds $ddump/dump.fd $ddump/dump.fd.after || return 1
@@ -367,6 +371,17 @@ EOF
 
 	done
 
+	[ -e "$DUMP_PATH/dump.log" ] && {
+		echo "Dump log   : $DUMP_PATH/dump.log"
+		cat $DUMP_PATH/dump.log* | grep Error
+	}
+	[ -e "$DUMP_PATH/restore.log" ] && {
+		echo "Restore log: $DUMP_PATH/restore.log"
+		cat $DUMP_PATH/restore.log* | grep Error
+	}
+
+	ps f -o pid,sid,comm -C session01
+	read
 	echo Check results $PID
 	stop_test $tdir $tname
 	sltime=1
