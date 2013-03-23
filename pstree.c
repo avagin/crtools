@@ -320,7 +320,7 @@ err:
 
 static void pstree_find_sid(struct pstree_item *item)
 {
-	struct pstree_item *sl, *tmp, *item_cur;
+	struct pstree_item *sl, *tmp, *item_cur, *sl_cur;
 	int sl_depth, item_depth;
 
 	sl = pstree_hash_find(item->sid);
@@ -337,20 +337,40 @@ static void pstree_find_sid(struct pstree_item *item)
 		return;
 	}
 
-	for (tmp = item; tmp; tmp = tmp->parent, item_depth++);
+	for (tmp = item, item_depth = 0; tmp->parent; tmp = tmp->parent, item_depth++);
 
-	for (tmp = sl; tmp; tmp = tmp->parent, sl_depth++);
+	for (tmp = sl, sl_depth = 0; tmp->parent; tmp = tmp->parent, sl_depth++);
+
+	if (sl_depth > item_depth) {
+		if (sl->state != TASK_HELPER) {
+			pr_err("The session leader is unreachable");
+			BUG();
+		}
+
+		for (; sl_depth > item_depth; sl_cur = sl_cur->parent, sl_depth--);
+	}
 
 	/* the task could fork a child before and after setsid() */
-	item_cur = item->parent;
-	while (item_cur &&   item_cur->pid.virt != item->sid &&
-			item_cur->born_sid != item->sid) {
-		if (item_cur->born_sid != -1 && item_cur->born_sid != item->sid) {
+	item_cur = item;
+	while (1) {
+		item_cur = item_cur->parent;
+
+		if (!item_cur)
+			break;
+
+		if (item_cur->pid.virt == item->sid)
+			break;
+
+		if (item_cur->born_sid == item->sid)
+			break;
+
+		if (item_cur->born_sid != -1) {
 			pr_err("Can't determinate with which sid (%d or %d)"
 				"the process %d was born\n",
 				item_cur->born_sid, item->sid, item_cur->pid.virt);
 			BUG();
 		}
+
 		item_cur->born_sid = item->sid;
 		pr_info("%d was born with sid %d\n", item_cur->pid.virt, item->sid);
 		if (item_cur->parent == sl->parent) {
@@ -360,7 +380,6 @@ static void pstree_find_sid(struct pstree_item *item)
 			pr_info("%d was forked from %d\n", item_cur->pid.virt, sl->pid.virt);
 			return;
 		}
-		item_cur = item_cur->parent;
 	}
 
 	if (item_cur == NULL) {
