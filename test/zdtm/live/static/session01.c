@@ -45,6 +45,16 @@ static futex_t *fstate;
 static struct testcase __testcases[] = {
 	{ 2,  1,  2,  1,  2, 1, 0 },  /* session00			*/
 	{ 4,  2,  4,  2,  4, 1, 0 },  /*  |\_session00			*/
+	{24,  4, 24,  2, 24, 0, 0 },
+	{25, 24, 25, 24, 25, 1, 1 },
+	{26, 25, 26, 24, 26, 1, 0 },
+	{27, 26, 24, 24, 24, 1, 0 },
+	{28, 24, 28, 24, 28, 1, 1 },
+	{29, 28, 29, 24, 29, 1, 0 },
+	{30, 29, 30, 24, 30, 1, 0 },
+	{31, 30, 31, 24, 31, 1, 0 },
+	{32, 31, 24, 24, 24, 1, 0 },
+//#if 0
 	{19,  4,  4,  4,  4, 1, 1 },  /*  |\_session00			*/
 	{22,  4, 22,  4, 22, 1, 1 },  /*  |\_session00			*/
 	{23, 22,  4,  4,  4, 1, 0 },  /*  |  \_session00		*/
@@ -145,7 +155,7 @@ static int child(const int c)
 		if (getpid() != getpgid(getpid()))
 			if (setpgid(getpid(), getpid()) < 0) {
 				err("%d: setpgid() failed", c);
-//				goto err;
+				goto err;
 			}
 		t->master.pgid = t->master.pid;
 	}
@@ -165,7 +175,7 @@ static int child(const int c)
 		if (getpgid(getpid()) != testcases[i].master.pid)
 			if (setpgid(getpid(), testcases[i].master.pid) < 0) {
 				err("setpgid() failed (%d) (%d)\n", c, i);
-//				goto err;
+				goto err;
 			}
 
 		t->master.pgid	= testcases[i].master.pid;
