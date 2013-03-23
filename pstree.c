@@ -341,6 +341,7 @@ static void pstree_find_sid(struct pstree_item *item)
 
 	for (tmp = sl, sl_depth = 0; tmp->parent; tmp = tmp->parent, sl_depth++);
 
+	sl_cur = sl;
 	if (sl_depth > item_depth) {
 		if (sl->state != TASK_HELPER) {
 			pr_err("The session leader is unreachable");
@@ -353,16 +354,21 @@ static void pstree_find_sid(struct pstree_item *item)
 	/* the task could fork a child before and after setsid() */
 	item_cur = item;
 	while (1) {
-		item_cur = item_cur->parent;
+		if (sl_depth == item_depth) {
+			sl_depth--;
+			sl_cur = sl_cur->parent;
+		}
 
-		if (!item_cur)
-			break;
+		item_cur = item_cur->parent;
+		item_depth--;
+
+		BUG_ON(item_cur == NULL);
 
 		if (item_cur->pid.virt == item->sid)
-			break;
+			return;
 
 		if (item_cur->born_sid == item->sid)
-			break;
+			return;
 
 		if (item_cur->born_sid != -1) {
 			pr_err("Can't determinate with which sid (%d or %d)"
@@ -373,16 +379,17 @@ static void pstree_find_sid(struct pstree_item *item)
 
 		item_cur->born_sid = item->sid;
 		pr_info("%d was born with sid %d\n", item_cur->pid.virt, item->sid);
-		if (item_cur->parent == sl->parent) {
-			item_cur->rst->clone_flags |= CLONE_PARENT;
-			item_cur->parent = sl;
-			list_move(&item_cur->sibling, &sl->children);
-			pr_info("%d was forked from %d\n", item_cur->pid.virt, sl->pid.virt);
-			return;
-		}
+
+		if (item_cur->parent == sl_cur->parent)
+			break;
 	}
 
-	if (item_cur == NULL) {
+	if (item_cur->parent == sl_cur->parent) {
+		item_cur->rst->clone_flags |= CLONE_PARENT;
+		item_cur->parent = sl;
+		list_move(&item_cur->sibling, &sl->children);
+		pr_info("%d was forked from %d\n", item_cur->pid.virt, sl->pid.virt);
+	} else {
 		pr_err("Can't find a session leader for %d\n", item->sid);
 		BUG();
 	}
