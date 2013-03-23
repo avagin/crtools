@@ -19,6 +19,10 @@ struct pstree_item *root_item;
 #define PSTREE_HASH_SIZE	32
 static struct pstree_item *pstree_hash[PSTREE_HASH_SIZE];
 
+#define for_each_pstree_hash(_i, _pi)				\
+	for (i = 0; i < PSTREE_HASH_SIZE; i++)			\
+		for (_pi = pstree_hash[i]; _pi; _pi = _pi->hash_next)
+
 struct pstree_item *pstree_hash_find(pid_t pid)
 {
 	struct pstree_item *p;
@@ -318,6 +322,7 @@ static int prepare_pstree_ids(void)
 {
 	struct pstree_item *item, *child, *helper, *tmp;
 	LIST_HEAD(helpers);
+	int i;
 
 	pid_t current_pgid = getpgid(getpid());
 
@@ -371,9 +376,8 @@ static int prepare_pstree_ids(void)
 		}
 	}
 
-again:
 	/* Try to connect helpers to session leaders */
-	for_each_pstree_item(item) {
+	for_each_pstree_hash(i, item) {
 		if (!item->parent) /* skip the root task */
 			continue;
 
@@ -389,15 +393,10 @@ again:
 			parent = pstree_hash_find(item->sid);
 			if (parent) {
 				if (parent->parent == item->parent) {
-					tmp = item;
-					if (item->sibling.prev != &item->parent->children)
-						item = list_entry(item->sibling.prev, struct pstree_item, sibling);
-					else
-						item = item->parent;
-					tmp->rst->clone_flags |= CLONE_PARENT;
-					tmp->parent = parent;
-					list_move(&tmp->sibling, &parent->children);
-					pr_info("%d was forked from %d\n", tmp->pid.virt, parent->pid.virt);
+					item->rst->clone_flags |= CLONE_PARENT;
+					item->parent = parent;
+					list_move(&item->sibling, &parent->children);
+					pr_info("%d was forked from %d\n", item->pid.virt, parent->pid.virt);
 					continue;
 				}
 
@@ -418,14 +417,15 @@ again:
 						tmp->parent = parent;
 						list_move(&tmp->sibling, &parent->children);
 						pr_info("%d was forked from %d\n", tmp->pid.virt, parent->pid.virt);
-						goto again;
+						break;
 					}
 					tmp = tmp->parent;
 				}
 				if (tmp == NULL) {
 					pr_err("Can't find a session leader for %d\n", item->sid);
 					return -1;
-				}
+				} else
+					continue;
 			} else {
 				pr_err("Can't find a session leader for %d\n", item->sid);
 				return -1;
