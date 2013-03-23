@@ -318,6 +318,52 @@ err:
 	return ret;
 }
 
+static void pstree_find_sid(struct pstree_item *item)
+{
+	struct pstree_item *sl, *tmp;
+
+	sl = pstree_hash_find(item->sid);
+	if (!sl) {
+		pr_err("Can't find a session leader for %d\n", item->sid);
+		BUG();
+	}
+
+	if (sl->parent == item->parent) {
+		item->rst->clone_flags |= CLONE_PARENT;
+		item->parent = sl;
+		list_move(&item->sibling, &sl->children);
+		pr_info("%d was forked from %d\n", item->pid.virt, sl->pid.virt);
+		return;
+	}
+
+	/* the task could fork a child before and after setsid() */
+	tmp = item->parent;
+	while (tmp &&   tmp->pid.virt != item->sid &&
+			tmp->born_sid != item->sid) {
+		if (tmp->born_sid != -1 && tmp->born_sid != item->sid) {
+			pr_err("Can't determinate with which sid (%d or %d)"
+				"the process %d was born\n",
+				tmp->born_sid, item->sid, tmp->pid.virt);
+			BUG();
+		}
+		tmp->born_sid = item->sid;
+		pr_info("%d was born with sid %d\n", tmp->pid.virt, item->sid);
+		if (tmp->parent == sl->parent) {
+			tmp->rst->clone_flags |= CLONE_PARENT;
+			tmp->parent = sl;
+			list_move(&tmp->sibling, &sl->children);
+			pr_info("%d was forked from %d\n", tmp->pid.virt, sl->pid.virt);
+			return;
+		}
+		tmp = tmp->parent;
+	}
+
+	if (tmp == NULL) {
+		pr_err("Can't find a session leader for %d\n", item->sid);
+		BUG();
+	}
+}
+
 static int prepare_pstree_ids(void)
 {
 	struct pstree_item *item, *child, *helper, *tmp;
@@ -385,51 +431,10 @@ static int prepare_pstree_ids(void)
 			continue;
 
 		if (item->sid != item->pid.virt) {
-			struct pstree_item *parent;
-
 			if (item->parent->sid == item->sid)
 				continue;
 
-			parent = pstree_hash_find(item->sid);
-			if (parent) {
-				if (parent->parent == item->parent) {
-					item->rst->clone_flags |= CLONE_PARENT;
-					item->parent = parent;
-					list_move(&item->sibling, &parent->children);
-					pr_info("%d was forked from %d\n", item->pid.virt, parent->pid.virt);
-					continue;
-				}
-
-				/* the task could fork a child before and after setsid() */
-				tmp = item->parent;
-				while (tmp &&   tmp->pid.virt != item->sid &&
-						tmp->born_sid != item->sid) {
-					if (tmp->born_sid != -1 && tmp->born_sid != item->sid) {
-						pr_err("Can't determinate with which sid (%d or %d)"
-							"the process %d was born\n",
-							tmp->born_sid, item->sid, tmp->pid.virt);
-						return -1;
-					}
-					tmp->born_sid = item->sid;
-					pr_info("%d was born with sid %d\n", tmp->pid.virt, item->sid);
-					if (tmp->parent == parent->parent) {
-						tmp->rst->clone_flags |= CLONE_PARENT;
-						tmp->parent = parent;
-						list_move(&tmp->sibling, &parent->children);
-						pr_info("%d was forked from %d\n", tmp->pid.virt, parent->pid.virt);
-						break;
-					}
-					tmp = tmp->parent;
-				}
-				if (tmp == NULL) {
-					pr_err("Can't find a session leader for %d\n", item->sid);
-					return -1;
-				} else
-					continue;
-			} else {
-				pr_err("Can't find a session leader for %d\n", item->sid);
-				return -1;
-			}
+			pstree_find_sid(item);
 
 			continue;
 		}
