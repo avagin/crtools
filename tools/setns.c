@@ -11,13 +11,19 @@
 int main (int argc, char *argv[])
 {
 	int fd = open(argv[1], O_RDONLY);
+	int pid;
+
 	if (fd == -1)
 		return 1;
-	if (syscall(__NR_set_ns, fd, CLONE_NEWNET) == -1)
+	if (syscall(__NR_set_ns, fd, CLONE_NEWPID) == -1)
 		return 1;
 	close(fd);
 
-	execvp(argv[2], argv + 2);
+	pid = fork();
+	if (pid == 0)
+		execvp(argv[2], argv + 2);
+	else
+		wait(NULL);
 	return 1;
 }
 

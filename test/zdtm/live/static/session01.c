@@ -55,7 +55,7 @@ static struct testcase __testcases[] = {
 	{30, 29, 30, 24, 30, 1, 0 },
 	{31, 30, 31, 24, 31, 1, 0 },
 	{32, 31, 24, 24, 24, 1, 0 },
-#if 0
+//#if 0
 	{19,  4,  4,  4,  4, 1, 1 },  /*  |\_session00			*/
 	{22,  4, 22,  4, 22, 1, 1 },  /*  |\_session00			*/
 	{23, 22,  4,  4,  4, 1, 0 },  /*  |  \_session00		*/
@@ -76,7 +76,7 @@ static struct testcase __testcases[] = {
 	{ 3, 13,  2,  2,  2, 1, 0 },  /* session00			*/
 	{ 6,  2,  6,  2,  6, 0, 0 },  /*   \_session00			*/
 	{14,  6,  6,  6,  6, 1, 0 },  /* session00			*/
-#endif
+//#endif
 };
 
 #define TESTS (sizeof(__testcases) / sizeof(struct testcase))

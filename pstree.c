@@ -318,9 +318,37 @@ err:
 	return ret;
 }
 
+int pstree_get_depth_and_last(struct pstree_item *item, struct pstree_item **last)
+{
+	struct pstree_item *tmp;
+	int depth = 0, l;
+
+	*last = NULL;
+	if (item == root_item)
+		return 0;
+
+	if (item->parent == root_item)
+		return 1;
+
+	l = 1;
+	depth = 2;
+	for (tmp = item->parent; tmp->parent != root_item; tmp = tmp->parent) {
+		depth++;
+
+		if (tmp->sid != tmp->pid.virt)
+			l = 0;
+		if (tmp->sid == item->sid)
+			l = 0;
+	}
+	if (l)
+		*last = tmp;
+
+	return depth;
+}
+
 static void pstree_create_session(struct pstree_item *item)
 {
-	struct pstree_item *sl, *tmp, *item_cur, *sl_cur, *sl_last, *item_last;
+	struct pstree_item *sl, *item_cur, *sl_cur, *sl_last, *item_last;
 	int sl_depth, item_depth;
 
 	if (item == root_item)
@@ -355,35 +383,8 @@ static void pstree_create_session(struct pstree_item *item)
 	if (sl->parent == item->parent)
 		return;
 
-	item_last = item;
-	for (tmp = item->parent, item_depth = 2; tmp->parent != root_item; tmp = tmp->parent, item_depth++) {
-		if (tmp->sid != tmp->pid.virt)
-			item_last = NULL;
-		if (tmp->sid == item->sid)
-			return;
-	}
-	if (item_last)
-		item_last = tmp;
-
-	if (sl == root_item)
-		pr_err("%d\n", item->pid.virt);
-
-	if (sl->parent == root_item || sl == root_item) {
-		sl_last = NULL;
-		sl_depth = 1;
-	} else {
-		sl_last = sl;
-		pr_err("%d %d %d %p\n", sl->pid.virt, sl->sid, sl->state == TASK_HELPER, sl->parent);
-		for (tmp = sl->parent, sl_depth = 2; tmp->parent != root_item; tmp = tmp->parent, sl_depth++) {
-			if (tmp->sid != tmp->pid.virt)
-				sl_last = NULL;
-			if (tmp->sid == item->sid)
-				sl_last = NULL;
-			pr_err("%p\n", tmp->parent);
-		}
-		if (sl_last)
-			sl_last = tmp;
-	}
+	item_depth = pstree_get_depth_and_last(item, &item_last);
+	sl_depth = pstree_get_depth_and_last(sl, &sl_last);
 
 	for (sl_cur = sl; sl_depth > item_depth; sl_depth--, sl_cur = sl_cur->parent);
 

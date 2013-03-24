@@ -318,7 +318,7 @@ EOF
 		opts="--page-server --address 127.0.0.1 --port $PS_PORT"
 	fi
 
-	ps f -o pid,sid,comm -C session01
+	unshare -m ../tools/setns /proc/$PID/ns/pid bash ../tools/ps.sh
 	read
 
 	save_fds $PID  $ddump/dump.fd
