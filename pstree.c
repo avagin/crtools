@@ -320,8 +320,11 @@ err:
 
 static void pstree_create_session(struct pstree_item *item)
 {
-	struct pstree_item *sl, *tmp, *item_cur, *sl_cur;
+	struct pstree_item *sl, *tmp, *item_cur, *sl_cur, *sl_last, *item_last;
 	int sl_depth, item_depth;
+
+	if (item == root_item)
+		return;
 
 	if (item->parent == root_item)
 		return;
@@ -349,15 +352,38 @@ static void pstree_create_session(struct pstree_item *item)
 		return;
 	}
 
-	if (sl->state != TASK_HELPER)
-		return;
-
 	if (sl->parent == item->parent)
 		return;
 
-	for (tmp = item, item_depth = 0; tmp->parent; tmp = tmp->parent, item_depth++);
+	item_last = item;
+	for (tmp = item->parent, item_depth = 2; tmp->parent != root_item; tmp = tmp->parent, item_depth++) {
+		if (tmp->sid != tmp->pid.virt)
+			item_last = NULL;
+		if (tmp->sid == item->sid)
+			return;
+	}
+	if (item_last)
+		item_last = tmp;
 
-	for (tmp = sl, sl_depth = 0; tmp->parent; tmp = tmp->parent, sl_depth++);
+	if (sl == root_item)
+		pr_err("%d\n", item->pid.virt);
+
+	if (sl->parent == root_item || sl == root_item) {
+		sl_last = NULL;
+		sl_depth = 1;
+	} else {
+		sl_last = sl;
+		pr_err("%d %d %d %p\n", sl->pid.virt, sl->sid, sl->state == TASK_HELPER, sl->parent);
+		for (tmp = sl->parent, sl_depth = 2; tmp->parent != root_item; tmp = tmp->parent, sl_depth++) {
+			if (tmp->sid != tmp->pid.virt)
+				sl_last = NULL;
+			if (tmp->sid == item->sid)
+				sl_last = NULL;
+			pr_err("%p\n", tmp->parent);
+		}
+		if (sl_last)
+			sl_last = tmp;
+	}
 
 	for (sl_cur = sl; sl_depth > item_depth; sl_depth--, sl_cur = sl_cur->parent);
 
@@ -370,6 +396,36 @@ static void pstree_create_session(struct pstree_item *item)
 		item_cur = item_cur->parent;
 		sl_cur = sl_cur->parent;
 		BUG_ON(!item_cur || !sl_cur);
+	}
+
+	if (sl->state != TASK_HELPER) {
+		if (sl == sl_cur)
+			return;
+		if (item_cur->parent == root_item) {
+			BUG_ON(item_last == NULL);
+			item_last->born_sid = item->sid;
+			pr_info("Set born_sid %d for %d\n", item_last->born_sid, item_last->pid.virt);
+			return;
+		}
+		BUG();
+	}
+
+	if (item_cur->parent == root_item) {
+		/* reparented subtree */
+		if (item_last) {
+			item_last->born_sid = item->sid;
+			item_last->parent = sl;
+			list_move(&item_last->sibling, &item_last->parent->children);
+			return;
+		}
+		if (sl_last) {
+			sl->parent = item->parent;
+			list_move(&sl->sibling, &sl->parent->children);
+			sl_last->born_sid = item->sid;
+			sl_last->parent = sl;
+			list_move(&sl_last->sibling, &sl_last->parent->children);
+			return;
+		}
 	}
 
 	pr_info("%d is moved to %d\n", sl->pid.virt, item_cur->parent->pid.virt);
@@ -439,24 +495,33 @@ static int prepare_pstree_ids(void)
 	 * reparented to init.
 	 */
 	list_for_each_entry(item, &root_item->children, sibling) {
+		int sid = item->sid;
 
 		/*
 		 * If a child belongs to the root task's session or it's
 		 * a session leader himself -- this is a simple case, we
 		 * just proceed in a normal way.
 		 */
-		if (item->sid == root_item->sid || item->sid == item->pid.virt)
+		if (item->sid == root_item->sid)
 			continue;
 
-		helper = pstree_hash_find(item->sid);
+		if (item->sid == item->pid.virt) {
+			if (item->born_sid == -1)
+				continue;
+			sid = item->born_sid;
+			if (sid == root_item->sid)
+				continue;
+		}
+
+		helper = pstree_hash_find(sid);
 		if (helper && helper->state == TASK_HELPER) {
 		} else {
 			helper = alloc_pstree_item_with_rst();
 			if (helper == NULL)
 				return -1;
-			helper->sid = item->sid;
-			helper->pgid = item->sid;
-			helper->pid.virt = item->sid;
+			helper->sid = sid;
+			helper->pgid = sid;
+			helper->pid.virt = sid;
 			helper->state = TASK_HELPER;
 			helper->parent = root_item;
 			list_add_tail(&helper->sibling, &helpers);
