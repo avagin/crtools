@@ -142,6 +142,17 @@ static int child(const int c)
 
 	t->master.pid = getpid();
 
+	if (t->clone_parent) {
+		pid_t ppid = getppid();
+
+		for (i = 0; i < TESTS; i++) {
+			if (testcases[i].master.pid == ppid) {
+				t->ppid = testcases[i].pid;
+				break;
+			}
+		}
+	}
+
 	if (fork_children(t, 0))
 		goto err;
 
