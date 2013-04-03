@@ -20,6 +20,7 @@ static int ac;
 static char **av;
 static int ns_exec(void *_arg)
 {
+	setsid();
 	execvp(av[1], av + 1);
 	return 1;
 }
