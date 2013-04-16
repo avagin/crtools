@@ -28,7 +28,7 @@ int current = 0;
 
 static void cleanup()
 {
-	int i;
+	int i, ret;
 
 	for (i = 0; i < nr_processes; i++) {
 		if (processes[i].dead)
@@ -37,6 +37,16 @@ static void cleanup()
 			continue;
 
 		kill(processes[i].pid, SIGKILL);
+	}
+
+	while (1) {
+		ret = wait(NULL);
+		if (ret == -1) {
+			if (errno == ECHILD)
+				break;
+			err("wait");
+			exit(1);
+		}
 	}
 }
 
@@ -215,6 +225,11 @@ int main(int argc, char ** argv)
 	int fail_cnt = 0;
 
 	test_init(argc, argv);
+
+	if (prctl(PR_SET_CHILD_SUBREAPER, 1, 0, 0, 0) == -1) {
+		err("PR_SET_CHILD_SUBREAPER");
+		return -1;
+	}
 
 	processes = mmap(NULL, PAGE_SIZE, PROT_WRITE | PROT_READ,
 				MAP_SHARED | MAP_ANONYMOUS, 0, 0);
