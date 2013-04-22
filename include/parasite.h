@@ -114,7 +114,6 @@ struct parasite_dump_itimers_args {
 
 struct parasite_dump_misc {
 	unsigned long		brk;
-	k_rtsigset_t		blocked;
 
 	u32 pid;
 	u32 sid;

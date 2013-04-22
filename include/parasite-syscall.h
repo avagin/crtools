@@ -8,8 +8,12 @@
 struct parasite_thread_ctl
 {
 	pid_t			tid;
+
 	user_regs_struct_t	regs_orig;				/* original registers */
 	bool			daemonized;
+
+	k_rtsigset_t		sig_blocked;
+	bool			use_sig_blocked;
 };
 
 /* parasite control block */
@@ -22,8 +26,6 @@ struct parasite_ctl {
 	unsigned long		parasite_ip;				/* service routine start ip */
 	unsigned long		syscall_ip;				/* entry point of infection */
 	u8			code_orig[BUILTIN_SYSCALL_SIZE];
-
-	int			signals_blocked;
 
 	unsigned int		*addr_cmd;				/* addr for command */
 	void			*addr_args;				/* address for arguments */

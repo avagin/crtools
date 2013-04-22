@@ -627,6 +627,7 @@ static int dump_task_core_all(struct parasite_ctl *ctl,
 		struct vm_area_list *vma_area_list,
 		const struct cr_fdset *cr_fdset)
 {
+	k_rtsigset_t *sig_blocked = &ctl->threads[0].sig_blocked;
 	int fd_core = fdset_fd(cr_fdset, CR_FD_CORE);
 	int ret = -1;
 	pid_t pid = ctl->pid.real;
@@ -652,7 +653,7 @@ static int dump_task_core_all(struct parasite_ctl *ctl,
 	strncpy((char *)core->tc->comm, stat->comm, TASK_COMM_LEN);
 	core->tc->flags = stat->flags;
 	BUILD_BUG_ON(sizeof(core->tc->blk_sigset) != sizeof(k_rtsigset_t));
-	memcpy(&core->tc->blk_sigset, &misc->blocked, sizeof(k_rtsigset_t));
+	memcpy(&core->tc->blk_sigset, sig_blocked, sizeof(k_rtsigset_t));
 
 	core->tc->task_state = TASK_ALIVE;
 	core->tc->exit_code = 0;
@@ -1069,7 +1070,8 @@ static int collect_file_locks(const struct cr_options *opts)
 }
 
 static int dump_task_thread(struct parasite_ctl *parasite_ctl,
-			    struct pid *tid, CoreEntry *core)
+			    struct pid *tid, CoreEntry *core,
+			    k_rtsigset_t *sig_blocked)
 {
 	int ret = -1, fd_core;
 	pid_t pid = tid->real;
@@ -1089,6 +1091,7 @@ static int dump_task_thread(struct parasite_ctl *parasite_ctl,
 	}
 
 	core->thread_core->has_blk_sigset = true;
+	memcpy(&core->thread_core->blk_sigset, sig_blocked, sizeof(*sig_blocked));
 
 	ret = dump_sched_info(pid, core->thread_core);
 	if (ret)
@@ -1202,7 +1205,8 @@ static int dump_task_threads(struct parasite_ctl *parasite_ctl,
 			item->threads[i].virt = item->pid.virt;
 			continue;
 		}
-		if (dump_task_thread(parasite_ctl, &item->threads[i], item->core[i]))
+		if (dump_task_thread(parasite_ctl, &item->threads[i], item->core[i],
+					&parasite_ctl->threads[i].sig_blocked))
 			return -1;
 	}
 

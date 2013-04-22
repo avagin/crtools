@@ -67,7 +67,6 @@ int __parasite_execute_trap(struct parasite_ctl *ctl, pid_t pid, user_regs_struc
 	int status;
 	int ret = -1;
 
-again:
 	if (ptrace(PTRACE_SETREGS, pid, NULL, regs)) {
 		pr_perror("Can't set registers (pid: %d)", pid);
 		goto err;
@@ -104,75 +103,11 @@ again:
 	}
 
 	if (WSTOPSIG(status) != SIGTRAP || siginfo.si_code != ARCH_SI_TRAP) {
-retry_signal:
 		pr_debug("** delivering signal %d si_code=%d\n",
 			 siginfo.si_signo, siginfo.si_code);
 
-		if (ctl->signals_blocked) {
-			pr_err("Unexpected %d task interruption, aborting\n", pid);
-			goto err;
-		}
-
-		/* FIXME: jerr(siginfo.si_code > 0, err_restore); */
-
-		/*
-		 * This requires some explanation. If a signal from original
-		 * program delivered while we're trying to execute our
-		 * injected blob -- we need to setup original registers back
-		 * so the kernel would make sigframe for us and update the
-		 * former registers.
-		 *
-		 * Then we should swap registers back to our modified copy
-		 * and retry.
-		 */
-
-		if (ptrace(PTRACE_SETREGS, pid, NULL, &ctl->threads[0].regs_orig)) {
-			pr_perror("Can't set registers (pid: %d)", pid);
-			goto err;
-		}
-
-		if (ptrace(PTRACE_INTERRUPT, pid, NULL, NULL)) {
-			pr_perror("Can't interrupt (pid: %d)", pid);
-			goto err;
-		}
-
-		if (ptrace(PTRACE_CONT, pid, NULL, (void *)(unsigned long)siginfo.si_signo)) {
-			pr_perror("Can't continue (pid: %d)", pid);
-			goto err;
-		}
-
-		if (wait4(pid, &status, __WALL, NULL) != pid) {
-			pr_perror("Waited pid mismatch (pid: %d)", pid);
-			goto err;
-		}
-
-		if (!WIFSTOPPED(status)) {
-			pr_err("Task is still running (pid: %d)\n", pid);
-			goto err;
-		}
-
-		if (ptrace(PTRACE_GETSIGINFO, pid, NULL, &siginfo)) {
-			pr_perror("Can't get siginfo (pid: %d)", pid);
-			goto err;
-		}
-
-		if (SI_EVENT(siginfo.si_code) != PTRACE_EVENT_STOP)
-			goto retry_signal;
-
-		/*
-		 * Signal is delivered, so we should update
-		 * original registers.
-		 */
-		{
-			user_regs_struct_t r;
-			if (ptrace(PTRACE_GETREGS, pid, NULL, &r)) {
-				pr_perror("Can't obtain registers (pid: %d)", pid);
-				goto err;
-			}
-			ctl->threads[0].regs_orig = r;
-		}
-
-		goto again;
+		pr_err("Unexpected %d task interruption, aborting\n", pid);
+		goto err;
 	}
 
 	/*
@@ -491,7 +426,6 @@ int parasite_dump_thread_seized(struct parasite_ctl *ctl, struct pid *tid,
 
 	ret = parasite_execute_daemon_by_pid(PARASITE_CMD_DUMP_THREAD, ctl, tid->real);
 
-	memcpy(&core->thread_core->blk_sigset, &args->blocked, sizeof(args->blocked));
 	CORE_THREAD_ARCH_INFO(core)->clear_tid_addr = encode_pointer(args->tid_addr);
 	tid->virt = args->tid;
 	core_put_tls(core, args->tls);
@@ -758,6 +692,51 @@ int parasite_fini_threads_seized(struct parasite_ctl *ctl)
 	return ret;
 }
 
+static int block_signals(struct pstree_item *item, struct parasite_ctl *ctl)
+{
+	int ret = 0, i;
+	k_rtsigset_t blockall;
+
+	ksigfillset(&blockall);
+
+	for (i = 0; i < item->nr_threads; i++) {
+		k_rtsigset_t *mask = &ctl->threads[i].sig_blocked;
+		pid_t tid = item->threads[i].real;
+
+		ret = ptrace(PTRACE_GETSIGMASK, tid, sizeof(*mask), mask);
+		if (ret) {
+			pr_perror("Can't get sigblockmask of %d\n", tid);
+			break;
+		}
+		ret = ptrace(PTRACE_SETSIGMASK, tid, sizeof(blockall), &blockall);
+		if (ret) {
+			pr_perror("Can't block all signals of %d\n", tid);
+			break;
+		}
+		ctl->threads[i].use_sig_blocked = true;
+	}
+
+	return ret;
+}
+
+static int unblock_signals(struct parasite_ctl *ctl)
+{
+	int ret = 0, i;
+
+	for (i = 0; i < ctl->nr_threads; i++) {
+		k_rtsigset_t *mask = &ctl->threads[i].sig_blocked;
+		pid_t tid = ctl->threads[i].tid;
+
+		ret = ptrace(PTRACE_SETSIGMASK, tid, sizeof(*mask), mask);
+		if (ret) {
+			pr_perror("Can't restore sigblockmask of %d\n", tid);
+			break;
+		}
+	}
+
+	return ret;
+}
+
 static int parasite_fini_seized(struct parasite_ctl *ctl)
 {
 	struct parasite_init_args *args;
@@ -787,7 +766,6 @@ int parasite_cure_seized(struct parasite_ctl *ctl)
 	int ret = 0;
 
 	if (ctl->parasite_ip) {
-		ctl->signals_blocked = 0;
 		ret = parasite_fini_threads_seized(ctl);
 		parasite_fini_seized(ctl);
 	}
@@ -818,6 +796,9 @@ int parasite_cure_seized(struct parasite_ctl *ctl)
 		pr_err("Can't restore registers (pid: %d)\n", ctl->pid.real);
 		ret = -1;
 	}
+
+	if (unblock_signals(ctl))
+		ret = -1;
 
 	xfree(ctl);
 	return ret;
@@ -935,6 +916,9 @@ struct parasite_ctl *parasite_infect_seized(pid_t pid, struct pstree_item *item,
 	if (!ctl)
 		return NULL;
 
+	if (block_signals(item, ctl))
+		goto err_restore;
+
 	/*
 	 * Inject a parasite engine. Ie allocate memory inside alien
 	 * space and copy engine code there. Then re-map the engine
@@ -960,8 +944,6 @@ struct parasite_ctl *parasite_infect_seized(pid_t pid, struct pstree_item *item,
 		pr_err("%d: Can't create a transport socket\n", pid);
 		goto err_restore;
 	}
-
-	ctl->signals_blocked = 1;
 
 	ret = parasite_set_logfd(ctl, pid);
 	if (ret) {

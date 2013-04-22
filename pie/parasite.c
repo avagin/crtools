@@ -25,8 +25,6 @@ static struct tid_state_s {
 	futex_t		ack;
 	int		ret;
 
-	bool		use_sig_blocked;
-	k_rtsigset_t	sig_blocked;
 	void		*next;
 	unsigned char	stack[PARASITE_STACK_SIZE] __aligned(8);
 } *tid_state;
@@ -122,7 +120,6 @@ static int dump_itimers(struct parasite_dump_itimers_args *args)
 static int dump_misc(struct parasite_dump_misc *args)
 {
 	args->brk = sys_brk(0);
-	args->blocked = thread_leader->sig_blocked;
 
 	args->pid = sys_getpid();
 	args->sid = sys_getsid();
@@ -211,14 +208,10 @@ static int dump_thread(struct parasite_dump_thread *args)
 	if (!s)
 		return -ENOENT;
 
-	if (!s->use_sig_blocked)
-		return -EINVAL;
-
 	ret = sys_prctl(PR_GET_TID_ADDRESS, (unsigned long) &args->tid_addr, 0, 0, 0);
 	if (ret)
 		return ret;
 
-	args->blocked = s->sig_blocked;
 	args->tid = tid;
 	args->tls = arch_get_tls();
 
@@ -227,18 +220,9 @@ static int dump_thread(struct parasite_dump_thread *args)
 
 static int init_thread(struct parasite_init_args *args)
 {
-	k_rtsigset_t to_block;
-	int ret;
-
 	if (next_tid_state >= nr_tid_state)
 		return -ENOMEM;
 
-	ksigfillset(&to_block);
-	ret = sys_sigprocmask(SIG_SETMASK, &to_block,
-			      &tid_state[next_tid_state].sig_blocked,
-			      sizeof(k_rtsigset_t));
-	if (ret >= 0)
-		tid_state[next_tid_state].use_sig_blocked = true;
 	tid_state[next_tid_state].tid = sys_gettid();
 	tid_state[next_tid_state].real = args->real;
 
@@ -249,15 +233,11 @@ static int init_thread(struct parasite_init_args *args)
 
 	next_tid_state++;
 
-	return ret;
+	return 0;
 }
 
 static int fini_thread(struct tid_state_s *s)
 {
-	if (s->use_sig_blocked)
-		return sys_sigprocmask(SIG_SETMASK, &s->sig_blocked,
-				       NULL, sizeof(k_rtsigset_t));
-
 	return 0;
 }
 
