@@ -663,7 +663,10 @@ int parasite_get_proc_fd_seized(struct parasite_ctl *ctl)
 	fd = recv_fd(ctl->tsock);
 	if (fd < 0)
 		pr_err("Can't retrieve FD from socket\n");
-	__parasite_execute_daemon_wait_ack(PARASITE_CMD_DRAIN_FDS, ctl, ctl->pid.real);
+	if (__parasite_execute_daemon_wait_ack(PARASITE_CMD_GET_PROC_FD, ctl, ctl->pid.real)) {
+		close(fd);
+		return -1;
+	}
 
 	return fd;
 }
