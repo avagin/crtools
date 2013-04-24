@@ -468,7 +468,6 @@ static void __parasite_daemon_thread_ack(struct tid_state_s *s, int ret)
 	s->ret = ret;
 	futex_set(&s->ack, PARASITE_CMD_IDLE);
 	futex_set_and_wake(&s->cmd, PARASITE_CMD_IDLE);
-	futex_wait_until(&s->ack, PARASITE_CMD_ACK);
 }
 
 static unsigned long noinline __used
@@ -517,9 +516,6 @@ static int __parasite_execute_thread(struct ctl_msg *m)
 
 	pr_debug("Wait thread %d for PARASITE_CMD_IDLE\n", s->real);
 	futex_wait_until(&s->cmd, PARASITE_CMD_IDLE);
-
-	pr_debug("Wake thread %d daemon with " __stringify_1(PARASITE_CMD_ACK) "\n", s->real);
-	futex_set_and_wake(&s->ack, PARASITE_CMD_ACK);
 
 	return s->ret;
 }
