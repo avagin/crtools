@@ -13,6 +13,7 @@
 
 #include <string.h>
 
+#include "asm/types.h"
 #include "asm/parasite.h"
 #include "asm/restorer.h"
 
@@ -527,7 +528,7 @@ static int __parasite_execute_thread(struct ctl_msg *m)
 	return s->ret;
 }
 
-static int fini(struct tid_state_s *s)
+static int fini(struct tid_state_s *s, bool block)
 {
 	unsigned long new_sp;
 	int i;
@@ -536,6 +537,9 @@ static int fini(struct tid_state_s *s)
 		struct ctl_msg m = {.cmd = PARASITE_CMD_FINI_THREAD, .id = tid_state[i].real};
 		__parasite_execute_thread(&m);
 	}
+
+	if (block)
+		ksigfillset(&RT_SIGFRAME_UC(s->sigframe).uc_sigmask);
 
 	new_sp = (long)s->sigframe + SIGFRAME_OFFSET;
 	pr_debug("%ld: new_sp=%lx ip %lx\n", sys_gettid(),
@@ -569,7 +573,7 @@ __parasite_daemon_thread_leader(void *args, struct tid_state_s *s, unsigned long
 
 		switch (m.cmd) {
 		case PARASITE_CMD_FINI:
-			ret = fini(s);
+			ret = fini(s, true);
 			sys_close(tsock);
 			/*
 			 * No ACK here since we're getting out.
@@ -619,7 +623,7 @@ __parasite_daemon_thread_leader(void *args, struct tid_state_s *s, unsigned long
 	}
 
 out:
-	fini(&tid_state[0]);
+	fini(&tid_state[0], false);
 
 	return oldstack;
 }
