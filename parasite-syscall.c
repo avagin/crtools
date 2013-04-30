@@ -320,7 +320,7 @@ static int parasite_init(struct parasite_ctl *ctl, pid_t pid, int nr_threads)
 	args->p_addr_len = gen_parasite_saddr(&args->p_addr, pid);
 	args->nr_threads = nr_threads;
 	args->real = pid;
-	args->sigframe = ctl->threads[ctl->thread_leader].rsigframe;
+	args->sigframe = ctl->threads[0].rsigframe;
 
 	if (sock == -1) {
 		int rst = -1;
@@ -618,8 +618,8 @@ int parasite_init_threads_seized(struct parasite_ctl *ctl, struct pstree_item *i
 		ctl->nr_threads++;
 
 		args->real = tid;
-
-		ret = ptrace(PTRACE_GETREGS, tid, NULL, &ctl->threads[i].regs_orig);
+		args->sigframe = ctl->threads[i].rsigframe;
+		ret = ptrace(PTRACE_GETREGS, item->threads[i].real, NULL, &ctl->threads[i].regs_orig);
 		if (ret) {
 			pr_perror("Can't obtain registers (pid: %d)", tid);
 			goto err;
@@ -639,60 +639,6 @@ int parasite_init_threads_seized(struct parasite_ctl *ctl, struct pstree_item *i
 	return 0;
 err:
 	return -1 ;
-}
-
-int parasite_fini_threads_seized(struct parasite_ctl *ctl)
-{
-	struct parasite_init_args *args;
-	int ret = 0, i, status;
-
-	args = parasite_args(ctl, struct parasite_init_args);
-
-	for (i = 1; i < ctl->nr_threads; i++) {
-		pid_t tid = ctl->threads[i].tid;
-
-		if (!ctl->threads[i].daemonized)
-			break;
-
-		args->real = tid;
-		ret = parasite_execute_daemon_by_pid(PARASITE_CMD_FINI_THREAD, ctl, tid);
-		/*
-		 * Note the thread's fini() can be called even when not
-		 * all threads were init()'ed, say we're rolling back from
-		 * error happened while we were init()'ing some thread, thus
-		 * -ENOENT will be returned but we should continie for the
-		 * rest of threads set.
-		 *
-		 * Strictly speaking we always init() threads in sequence thus
-		 * we could simply break the loop once first -ENOENT returned
-		 * but I prefer to be on a safe side even if some future changes
-		 * would change the code logic.
-		 */
-		if (ret && ret != -ENOENT) {
-			pr_err("Can't fini thread in parasite %d\n", tid);
-			break;
-		} else if (ret == -ENOENT)
-			continue;
-
-		pr_debug("Waiting for %d to trap\n", tid);
-		if (wait4(tid, &status, __WALL, NULL) != tid) {
-			pr_perror("Waited pid mismatch (pid: %d)", tid);
-			break;
-		}
-
-		pr_debug("Daemon %d exited trapping\n", tid);
-		if (!WIFSTOPPED(status)) {
-			pr_err("Task is still running (pid: %d)\n", tid);
-			break;
-		}
-
-		if (ptrace(PTRACE_SETREGS, tid, NULL, &ctl->threads[i].regs_orig)) {
-			pr_perror("Can't restore registers (pid: %d)", tid);
-			return -1;
-		}
-	}
-
-	return ret;
 }
 
 static int block_signals(struct pstree_item *item, struct parasite_ctl *ctl)
@@ -752,23 +698,111 @@ static int unblock_signals(struct parasite_ctl *ctl)
 
 static int parasite_fini_seized(struct parasite_ctl *ctl)
 {
-	struct parasite_init_args *args;
-	int status, ret = 0;
+	int status, ret = 0, i, nr = 0, nr_dmnz = 0;
 
-	args = parasite_args(ctl, struct parasite_init_args);
-	args->real = ctl->pid.real;
+	for (i = 0; i < ctl->nr_threads; i++) {
+		pid_t pid = ctl->threads[i].tid;
 
-	args->real = ctl->pid.real;
-	__parasite_execute_daemon_by_pid(PARASITE_CMD_FINI, ctl, ctl->pid.real, false);
+		if (!ctl->threads[i].daemonized)
+			break;
 
-	if (wait4(ctl->pid.real, &status, __WALL, NULL) != ctl->pid.real) {
-		pr_perror("Waited pid mismatch (pid: %d)", ctl->pid.real);
-		ret = -1;
+		ptrace(PTRACE_INTERRUPT, pid, NULL, NULL);
+
+		pr_debug("Waiting for %d to trap\n", pid);
+		if (wait4(pid, &status, __WALL, NULL) != pid) {
+			pr_perror("Waited pid mismatch (pid: %d)", pid);
+			return -1;
+		}
+
+		pr_debug("Daemon %d exited trapping\n", pid);
+		if (!WIFSTOPPED(status)) {
+			pr_err("Task is still running (pid: %d)\n", pid);
+			return -1;
+		}
+
+		ret = ptrace(PTRACE_SYSCALL, pid, NULL, NULL);
+		if (ret) {
+			pr_perror("ptrace");
+			return -1;
+		}
+
+		nr_dmnz++;
 	}
 
-	if (!WIFSTOPPED(status)) {
-		pr_err("Task is still running (pid: %d)\n", ctl->pid.real);
-		ret = -1;
+	ret = __parasite_execute_daemon_by_pid(PARASITE_CMD_FINI, ctl, ctl->pid.real, false);
+	if (ret)
+		return -1;
+
+	while (1) {
+		user_regs_struct_t regs;
+		pid_t pid;
+
+		pid = wait4(-1, &status, __WALL, NULL);
+		if (pid < 0) {
+			pr_perror("wait4 failed");
+			return -1;
+		}
+
+		pr_debug("Trap %d\n", pid);
+		if (!WIFSTOPPED(status)) {
+			pr_err("%d\n", status);
+			return -1;
+		}
+		ret = ptrace(PTRACE_GETREGS, pid, NULL, &regs);
+		if (ret) {
+			pr_perror("ptrace");
+			return -1;
+		}
+
+		pr_debug("orig_ax %lx\n", regs.orig_ax);
+		if (regs.orig_ax == __NR_rt_sigreturn) {
+			nr++;
+			pr_debug("%d was stopped\n", pid);
+			if (nr == nr_dmnz)
+				break;
+			continue;
+		}
+
+		ret = ptrace(PTRACE_SYSCALL, pid, NULL, NULL);
+		if (ret) {
+			pr_perror("ptrace");
+			return -1;
+		}
+	}
+
+	for (i = 0; i < ctl->nr_threads; i++) {
+		pid_t pid = ctl->threads[i].tid;
+		user_regs_struct_t regs;
+
+		if (!ctl->threads[i].daemonized)
+			break;
+
+		ret = ptrace(PTRACE_SYSCALL, pid, NULL, NULL);
+		if (ret) {
+			pr_perror("ptrace");
+			return -1;
+		}
+
+		if (wait4(pid, &status, __WALL, NULL) != pid) {
+			pr_perror("wait4 failed");
+			return -1;
+		}
+
+		pr_debug("Trap %d\n", pid);
+		if (!WIFSTOPPED(status)) {
+			pr_err("%d\n", status);
+			return -1;
+		}
+		ret = ptrace(PTRACE_GETREGS, pid, NULL, &regs);
+		if (ret) {
+			pr_perror("ptrace");
+			return -1;
+		}
+
+		if (regs.orig_ax != __NR_rt_sigreturn) {
+			pr_debug("%d: syscall mismatch %lx (%x)\n",
+					pid, regs.orig_ax, __NR_rt_sigreturn);
+		}
 	}
 
 	return ret;
@@ -778,10 +812,8 @@ int parasite_cure_seized(struct parasite_ctl *ctl)
 {
 	int ret = 0;
 
-	if (ctl->parasite_ip) {
-		ret = parasite_fini_threads_seized(ctl);
+	if (ctl->parasite_ip)
 		parasite_fini_seized(ctl);
-	}
 
 	ctl->tsock = -1;
 
@@ -920,7 +952,7 @@ static unsigned long parasite_args_size(struct vm_area_list *vmas, struct parasi
 struct parasite_ctl *parasite_infect_seized(pid_t pid, struct pstree_item *item,
 		struct vm_area_list *vma_area_list, struct parasite_drain_fd *dfds)
 {
-	int ret;
+	int ret, i;
 	struct parasite_ctl *ctl;
 
 	BUG_ON(item->threads[0].real != pid);

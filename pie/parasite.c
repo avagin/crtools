@@ -14,6 +14,7 @@
 #include <string.h>
 
 #include "asm/parasite.h"
+#include "asm/restorer.h"
 
 static int tsock = -1;
 
@@ -241,6 +242,16 @@ static int init_thread(struct parasite_init_args *args)
 
 static int fini_thread(struct tid_state_s *s)
 {
+	unsigned long new_sp;
+
+	new_sp = (long)s->sigframe + SIGFRAME_OFFSET;
+	pr_debug("%ld: new_sp=%lx ip %lx\n", sys_gettid(),
+		 new_sp, s->sigframe->uc.uc_mcontext.rip);
+
+	ARCH_RT_SIGRETURN(new_sp);
+
+	BUG();
+
 	return 0;
 }
 
@@ -411,13 +422,6 @@ static int parasite_cfg_log(struct parasite_log_args *args)
 	return ret;
 }
 
-static int fini(struct tid_state_s *s)
-{
-	log_set_fd(-1);
-
-	return fini_thread(s);
-}
-
 static int __parasite_daemon_reply_ack(unsigned int id, unsigned int cmd, int err)
 {
 	struct ctl_msg m;
@@ -523,6 +527,30 @@ static int __parasite_execute_thread(struct ctl_msg *m)
 	return s->ret;
 }
 
+static int fini(struct tid_state_s *s)
+{
+	unsigned long new_sp;
+	int i;
+
+	for (i = 1; i < next_tid_state; i++) {
+		struct ctl_msg m = {.cmd = PARASITE_CMD_FINI_THREAD, .id = tid_state[i].real};
+		__parasite_execute_thread(&m);
+	}
+
+	new_sp = (long)s->sigframe + SIGFRAME_OFFSET;
+	pr_debug("%ld: new_sp=%lx ip %lx\n", sys_gettid(),
+		  new_sp, s->sigframe->uc.uc_mcontext.rip);
+
+	sys_close(tsock);
+	log_set_fd(-1);
+
+	ARCH_RT_SIGRETURN(new_sp);
+
+	BUG();
+
+	return -1;
+}
+
 static unsigned long noinline __used
 __parasite_daemon_thread_leader(void *args, struct tid_state_s *s, unsigned long oldstack)
 {
@@ -533,7 +561,7 @@ __parasite_daemon_thread_leader(void *args, struct tid_state_s *s, unsigned long
 
 	/* Reply we're alive */
 	if (__parasite_daemon_reply_ack(s->real, PARASITE_CMD_DAEMONIZE, 0))
-		return oldstack;
+		goto out;
 
 	while (1) {
 		if (__parasite_daemon_wait_msg(&m))
@@ -549,7 +577,7 @@ __parasite_daemon_thread_leader(void *args, struct tid_state_s *s, unsigned long
 			break;
 		case PARASITE_CMD_FINI_THREAD:
 			ret = __parasite_execute_thread(&m);
-			break;
+			continue;
 		case PARASITE_CMD_DUMP_THREAD:
 			ret = __parasite_execute_thread(&m);
 			break;
@@ -589,6 +617,9 @@ __parasite_daemon_thread_leader(void *args, struct tid_state_s *s, unsigned long
 		if (__parasite_daemon_reply_ack(m.id, m.cmd, ret))
 			break;
 	}
+
+out:
+	fini(&tid_state[0]);
 
 	return oldstack;
 }
