@@ -700,6 +700,7 @@ static int block_signals(struct pstree_item *item, struct parasite_ctl *ctl)
 	ksigfillset(&blockall);
 
 	for (i = 0; i < item->nr_threads; i++) {
+		CoreEntry *core = item->core[i];
 		k_rtsigset_t *mask = &ctl->threads[i].sig_blocked;
 		pid_t tid = item->threads[i].real;
 
@@ -714,6 +715,15 @@ static int block_signals(struct pstree_item *item, struct parasite_ctl *ctl)
 			break;
 		}
 		ctl->threads[i].use_sig_blocked = true;
+
+		if (core->tc) {
+			BUILD_BUG_ON(sizeof(core->tc->blk_sigset) != sizeof(k_rtsigset_t));
+			memcpy(&core->tc->blk_sigset, mask, sizeof(k_rtsigset_t));
+		}
+
+		core->thread_core->has_blk_sigset = true;
+		memcpy(&core->thread_core->blk_sigset, mask, sizeof(k_rtsigset_t));
+
 	}
 
 	return ret;
