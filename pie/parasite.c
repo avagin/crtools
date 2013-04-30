@@ -25,6 +25,8 @@ static struct tid_state_s {
 	futex_t		ack;
 	int		ret;
 
+	struct rt_sigframe *sigframe;
+
 	void		*next;
 	unsigned char	stack[PARASITE_STACK_SIZE] __aligned(8);
 } *tid_state;
@@ -225,6 +227,7 @@ static int init_thread(struct parasite_init_args *args)
 
 	tid_state[next_tid_state].tid = sys_gettid();
 	tid_state[next_tid_state].real = args->real;
+	tid_state[next_tid_state].sigframe = args->sigframe;
 
 	futex_set(&tid_state[next_tid_state].cmd, PARASITE_CMD_IDLE);
 	futex_set(&tid_state[next_tid_state].ack, PARASITE_CMD_IDLE);

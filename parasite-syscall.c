@@ -320,6 +320,7 @@ static int parasite_init(struct parasite_ctl *ctl, pid_t pid, int nr_threads)
 	args->p_addr_len = gen_parasite_saddr(&args->p_addr, pid);
 	args->nr_threads = nr_threads;
 	args->real = pid;
+	args->sigframe = ctl->threads[ctl->thread_leader].rsigframe;
 
 	if (sock == -1) {
 		int rst = -1;

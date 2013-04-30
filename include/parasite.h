@@ -71,6 +71,8 @@ struct parasite_init_args {
 
 	int			nr_threads;
 	pid_t			real;
+
+	struct rt_sigframe	*sigframe;
 };
 
 struct parasite_log_args {
