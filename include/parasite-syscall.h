@@ -14,6 +14,9 @@ struct parasite_thread_ctl
 
 	k_rtsigset_t		sig_blocked;
 	bool			use_sig_blocked;
+
+	struct rt_sigframe	*sigframe;
+	struct rt_sigframe	*rsigframe;
 };
 
 /* parasite control block */

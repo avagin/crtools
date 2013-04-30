@@ -23,14 +23,16 @@
 #include "pstree.h"
 #include "net.h"
 #include "mem.h"
+#include "restorer.h"
 
 #include <string.h>
 #include <stdlib.h>
 
 #include "asm/parasite-syscall.h"
 #include "asm/dump.h"
+#include "asm/restorer.h"
 
-#define parasite_size		(round_up(sizeof(parasite_blob), sizeof(long)))
+#define parasite_size		(round_up(sizeof(parasite_blob), PAGE_SIZE))
 
 static int can_run_syscall(unsigned long ip, unsigned long start, unsigned long end)
 {
@@ -911,7 +913,7 @@ static unsigned long parasite_args_size(struct vm_area_list *vmas, struct parasi
 	size = max(size, (unsigned long)vmas_pagemap_size(vmas));
 	size = max(size, (unsigned long)vmas_mprotect_size(vmas));
 
-	return size;
+	return round_up(size, PAGE_SIZE);
 }
 
 struct parasite_ctl *parasite_infect_seized(pid_t pid, struct pstree_item *item,
@@ -937,9 +939,21 @@ struct parasite_ctl *parasite_infect_seized(pid_t pid, struct pstree_item *item,
 	 */
 
 	ctl->args_size = parasite_args_size(vma_area_list, dfds);
-	ret = parasite_map_exchange(ctl, parasite_size + ctl->args_size);
+	ret = parasite_map_exchange(ctl, parasite_size +
+				ctl->args_size +
+				item->nr_threads * RESTORE_STACK_SIGFRAME);
 	if (ret)
 		goto err_restore;
+
+	for (i = 0; i < item->nr_threads; i++) {
+		struct parasite_thread_ctl *thread = &ctl->threads[i];
+
+		thread->sigframe = ctl->local_map + parasite_size + ctl->args_size + i * RESTORE_STACK_SIGFRAME;
+		thread->rsigframe = ctl->remote_map + parasite_size + ctl->args_size + i * RESTORE_STACK_SIGFRAME;
+
+		if (construct_sigframe(thread->sigframe, thread->rsigframe, item->core[i]))
+			goto err_restore;
+	}
 
 	pr_info("Putting parasite blob into %p->%p\n", ctl->local_map, ctl->remote_map);
 	memcpy(ctl->local_map, parasite_blob, sizeof(parasite_blob));
