@@ -482,8 +482,16 @@ int run_scripts(char *action)
 		return -1;
 	}
 
-	list_for_each_entry(script, &opts.scripts, node)
-		ret |= system(script->path);
+	list_for_each_entry(script, &opts.scripts, node) {
+		int exit_code;
+
+		exit_code = system(script->path);
+		if (exit_code) {
+			pr_err("%s exited with non-zero code %d\n",
+						script->path, exit_code);
+			ret |= exit_code;
+		}
+	}
 
 	unsetenv("CRTOOLS_SCRIPT_ACTION");
 	return ret;
