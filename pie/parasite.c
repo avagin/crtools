@@ -576,6 +576,8 @@ int __used parasite_service(unsigned int cmd, void *args)
 	switch (cmd) {
 	case PARASITE_CMD_INIT:
 		return init(args);
+	case PARASITE_CMD_DUMP_THREAD:
+		return dump_thread(args);
 	case PARASITE_CMD_INIT_THREAD:
 		return init_thread(args);
 	case PARASITE_CMD_FINI_THREAD:

@@ -516,18 +516,74 @@ static int dump_thread_in_two_stage(struct parasite_ctl *ctl, int id,
 	return 0;
 }
 
+static int dump_thread_in_one_stage(struct parasite_ctl *ctl, int id,
+				struct pid *tid, CoreEntry *core)
+{
+	user_regs_struct_t regs_orig;
+	pid_t pid = tid->real;
+	k_rtsigset_t maskall;
+	int ret;
+
+	ksigfillset(&maskall);
+
+	ret = ptrace(PTRACE_SETSIGMASK, pid, sizeof(k_rtsigset_t), &maskall);
+	if (ret) {
+		pr_perror("Can't get signal blocking mask for %d", pid);
+		return -1;
+	}
+
+	ret = ptrace(PTRACE_GETREGS, pid, NULL, &regs_orig);
+	if (ret) {
+		pr_perror("Can't obtain registers (pid: %d)", pid);
+		goto out;
+	}
+
+	ret = parasite_execute_trap_by_pid(PARASITE_CMD_DUMP_THREAD, ctl,
+					pid, &regs_orig,
+					ctl->r_thread_stack, false);
+	if (ret) {
+		pr_err("Can't init thread in parasite %d\n", pid);
+		goto out;
+	}
+
+	ret = get_task_regs(pid, regs_orig, core);
+	if (ret)
+		pr_err("Can't obtain regs for thread %d\n", pid);
+
+out:
+	if (ptrace(PTRACE_SETSIGMASK, pid, sizeof(k_rtsigset_t),
+					&core->thread_core->blk_sigset)) {
+		pr_perror("Can't restore signal blocking mask for %d", pid);
+		ret = -1;
+	}
+
+	return ret;
+}
+
 int parasite_dump_thread_seized(struct parasite_ctl *ctl, int id,
 				struct pid *tid, CoreEntry *core)
 {
 	struct parasite_dump_thread *args;
+	pid_t pid = tid->real;
 	int ret;
 
 	args = parasite_args(ctl, struct parasite_dump_thread);
 
 	if (id == 0)
 		ret = parasite_execute_daemon(PARASITE_CMD_DUMP_THREAD, ctl);
-	else
-		ret = dump_thread_in_two_stage(ctl, id, tid, core);
+	else {
+		ret = ptrace(PTRACE_GETSIGMASK, pid, sizeof(k_rtsigset_t),
+						&core->thread_core->blk_sigset);
+		if (ret) {
+			pr_warn("ptrace can't get signal blocking mask for %d", pid);
+			ret = dump_thread_in_two_stage(ctl, id, tid, core);
+		} else {
+			core->thread_core->has_blk_sigset = true;
+
+			ret = dump_thread_in_one_stage(ctl, id, tid, core);
+		}
+
+	}
 
 	CORE_THREAD_ARCH_INFO(core)->clear_tid_addr = encode_pointer(args->tid_addr);
 	tid->virt = args->tid;
