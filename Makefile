@@ -89,7 +89,7 @@ ifeq ($(DEBUG),1)
 	DEFINES += -DCR_DEBUG
 	CFLAGS	+= -O0 -ggdb3
 else
-	CFLAGS	+= -O2
+	CFLAGS	+= -O2 -g
 endif
 
 CFLAGS		+= $(WARNINGS) $(DEFINES)
