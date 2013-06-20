@@ -1103,6 +1103,41 @@ static unsigned long parasite_args_size(struct vm_area_list *vmas, struct parasi
 	return round_up(size, PAGE_SIZE);
 }
 
+static int parasite_start_in_two_stages(struct parasite_ctl *ctl, struct pstree_item *item)
+{
+	pid_t pid = ctl->pid.real;
+	int ret;
+
+	ret = parasite_init(ctl, pid, item->nr_threads);
+	if (ret) {
+		pr_err("%d: Can't create a transport socket\n", pid);
+		return -1;
+	}
+
+	ret = get_task_regs(pid, ctl->regs_orig, item->core[0]);
+	if (ret) {
+		pr_err("Can't obtain regs for thread %d\n", pid);
+		return -1;
+	}
+
+	ret = parasite_set_logfd(ctl, pid);
+	if (ret) {
+		pr_err("%d: Can't set a logging descriptor\n", pid);
+		return -1;
+	}
+
+	memcpy(&item->core[0]->tc->blk_sigset,
+		&ctl->sig_blocked, sizeof(k_rtsigset_t));
+
+	if (construct_sigframe(ctl->sigframe, ctl->rsigframe, item->core[0]))
+		return -1;
+
+	if (parasite_daemonize(ctl))
+		return -1;;
+
+	return 0;
+}
+
 struct parasite_ctl *parasite_infect_seized(pid_t pid, struct pstree_item *item,
 		struct vm_area_list *vma_area_list, struct parasite_drain_fd *dfds,
 		int timer_n)
@@ -1159,31 +1194,7 @@ struct parasite_ctl *parasite_infect_seized(pid_t pid, struct pstree_item *item,
 		p += PARASITE_STACK_SIZE;
 	}
 
-	ret = parasite_init(ctl, pid, item->nr_threads);
-	if (ret) {
-		pr_err("%d: Can't create a transport socket\n", pid);
-		goto err_restore;
-	}
-
-	ret = get_task_regs(pid, ctl->regs_orig, item->core[0]);
-	if (ret) {
-		pr_err("Can't obtain regs for thread %d\n", pid);
-		goto err_restore;
-	}
-
-	ret = parasite_set_logfd(ctl, pid);
-	if (ret) {
-		pr_err("%d: Can't set a logging descriptor\n", pid);
-		goto err_restore;
-	}
-
-	memcpy(&item->core[0]->tc->blk_sigset,
-		&ctl->sig_blocked, sizeof(k_rtsigset_t));
-
-	if (construct_sigframe(ctl->sigframe, ctl->rsigframe, item->core[0]))
-		goto err_restore;
-
-	if (parasite_daemonize(ctl))
+	if (parasite_start_in_two_stages(ctl, item))
 		goto err_restore;
 
 	return ctl;
@@ -1192,4 +1203,3 @@ err_restore:
 	parasite_cure_seized(ctl);
 	return NULL;
 }
-
