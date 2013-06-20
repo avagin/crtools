@@ -569,6 +569,42 @@ out:
 	return 0;
 }
 
+static noinline __used int parasite_init_daemon(void *data)
+{
+	struct parasite_init_args *args = data;
+	int ret;
+
+	sigframe = args->sigframe;
+
+	tsock = sys_socket(PF_UNIX, SOCK_STREAM, 0);
+	if (tsock < 0) {
+		pr_err("Can't create socket: %d\n", tsock);
+		goto err;
+	}
+
+	ret = sys_connect(tsock, (struct sockaddr *)&args->h_addr, args->h_addr_len);
+	if (ret < 0) {
+		pr_err("Can't connect the control socket\n");
+		goto err;
+	}
+
+	ret = recv_fd(tsock);
+	if (ret >= 0) {
+		log_set_fd(ret);
+		log_set_loglevel(args->log_level);
+		ret = 0;
+	} else
+		goto err;
+
+	parasite_daemon(data);
+
+err:
+	fini();
+	BUG();
+
+	return -1;
+}
+
 int __used parasite_service(unsigned int cmd, void *args)
 {
 	pr_info("Parasite cmd %d/%x process\n", cmd, cmd);
@@ -586,6 +622,8 @@ int __used parasite_service(unsigned int cmd, void *args)
 		return parasite_cfg_log(args);
 	case PARASITE_CMD_DAEMONIZE:
 		return parasite_daemon(args);
+	case PARASITE_CMD_INIT_DAEMON:
+		return parasite_init_daemon(args);
 	}
 
 	pr_err("Unknown command to parasite: %d\n", cmd);

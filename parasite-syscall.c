@@ -457,6 +457,72 @@ err:
 	return -1;
 }
 
+static int parasite_init_daemon(struct parasite_ctl *ctl)
+{
+	struct parasite_init_args *args;
+	pid_t pid = ctl->pid.real;
+	user_regs_struct_t regs;
+	struct ctl_msg m = { };
+	k_rtsigset_t blockall;
+
+	ksigfillset(&blockall);
+
+	*ctl->addr_cmd = PARASITE_CMD_INIT_DAEMON;
+
+	args = parasite_args(ctl, struct parasite_init_args);
+
+	args->sigframe = ctl->rsigframe;
+	args->log_level = log_get_loglevel();
+
+	if (prepare_tsock(ctl, pid, args))
+		goto err;;
+
+	regs = ctl->regs_orig;
+	parasite_setup_regs(ctl->parasite_ip, ctl->rstack, &regs);
+
+	if (ptrace(PTRACE_SETREGS, pid, NULL, &regs)) {
+		pr_perror("Can't set registers (pid: %d)", pid);
+		goto err;
+	}
+
+	if (ptrace(PTRACE_SETSIGMASK, pid, sizeof(k_rtsigset_t), &blockall)) {
+		pr_perror("Can't block signals");
+		goto err_regs;
+	}
+
+	if (ptrace(PTRACE_CONT, pid, NULL, NULL)) {
+		pr_perror("Can't continue (pid: %d)\n", pid);
+		goto err_mask;
+	}
+
+	ctl->tsock = accept_tsock();
+	if (ctl->tsock < 0)
+		goto err;
+
+	if (parasite_send_fd(ctl, log_get_fd()))
+		goto err;
+
+	pr_info("Wait for parasite being daemonized...\n");
+
+	if (parasite_wait_ack(ctl->tsock, PARASITE_CMD_DAEMONIZE, &m)) {
+		pr_err("Can't switch parasite %d to daemon mode %d\n",
+		       pid, m.err);
+		goto err;
+	}
+
+	ctl->daemonized = true;
+	pr_info("Parasite %d has been switched to daemon mode\n", pid);
+	return 0;
+
+err_mask:
+	ptrace(PTRACE_SETSIGMASK, pid, sizeof(k_rtsigset_t),
+				&RT_SIGFRAME_UC(ctl->sigframe).uc_sigmask);
+err_regs:
+	ptrace(PTRACE_SETREGS, pid, NULL, ctl->regs_orig);
+err:
+	return -1;
+}
+
 static int parasite_daemonize(struct parasite_ctl *ctl)
 {
 	pid_t pid = ctl->pid.real;
@@ -1155,6 +1221,26 @@ static int parasite_start_in_two_stages(struct parasite_ctl *ctl, struct pstree_
 	return 0;
 }
 
+static int parasite_start_in_one_stage(struct parasite_ctl *ctl, struct pstree_item *item)
+{
+	pid_t pid = ctl->pid.real;
+	int ret;
+
+	ret = get_task_regs(pid, ctl->regs_orig, item->core[0]);
+	if (ret) {
+		pr_err("Can't obtain regs for thread %d\n", pid);
+		return -1;
+	}
+
+	if (construct_sigframe(ctl->sigframe, ctl->rsigframe, item->core[0]))
+		return -1;
+
+	if (parasite_init_daemon(ctl))
+		return -1;;
+
+	return 0;
+}
+
 struct parasite_ctl *parasite_infect_seized(pid_t pid, struct pstree_item *item,
 		struct vm_area_list *vma_area_list, struct parasite_drain_fd *dfds,
 		int timer_n)
@@ -1223,8 +1309,13 @@ struct parasite_ctl *parasite_infect_seized(pid_t pid, struct pstree_item *item,
 		p += PARASITE_STACK_SIZE;
 	}
 
-	if (parasite_start_in_two_stages(ctl, item))
-		goto err_restore;
+	if (sigmask) {
+		if (parasite_start_in_one_stage(ctl, item))
+			goto err_restore;
+	} else {
+		if (parasite_start_in_two_stages(ctl, item))
+			goto err_restore;
+	}
 
 	return ctl;
 

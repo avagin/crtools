@@ -24,6 +24,7 @@ enum {
 
 	PARASITE_CMD_INIT,
 	PARASITE_CMD_INIT_THREAD,
+	PARASITE_CMD_INIT_DAEMON,
 
 	/*
 	 * These two must be greater than INITs.
@@ -67,6 +68,8 @@ struct ctl_msg {
 struct parasite_init_args {
 	int			h_addr_len;
 	struct sockaddr_un	h_addr;
+
+	int log_level;
 
 	k_rtsigset_t		sig_blocked;
 
