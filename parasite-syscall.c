@@ -1058,13 +1058,30 @@ err:
 	return NULL;
 }
 
-int parasite_map_exchange(struct parasite_ctl *ctl, unsigned long size)
+int parasite_map_exchange(struct parasite_ctl *ctl, unsigned long size, k_rtsigset_t *sigmask)
 {
 	int fd;
+	k_rtsigset_t blockall;
+	ksigfillset(&blockall);
+
+	if (sigmask) {
+		if (ptrace(PTRACE_SETSIGMASK, ctl->pid.real, sizeof(k_rtsigset_t), &blockall)) {
+			pr_perror("Unable to block signals\n");
+			return -1;
+		}
+	}
 
 	ctl->remote_map = mmap_seized(ctl, NULL, size,
 				      PROT_READ | PROT_WRITE | PROT_EXEC,
 				      MAP_ANONYMOUS | MAP_SHARED, -1, 0);
+
+	if (sigmask) {
+		if (ptrace(PTRACE_SETSIGMASK, ctl->pid.real, sizeof(k_rtsigset_t), sigmask)) {
+			pr_perror("Unable to block signals\n");
+			return -1;
+		}
+	}
+
 	if (!ctl->remote_map) {
 		pr_err("Can't allocate memory for parasite blob (pid: %d)\n", ctl->pid.real);
 		return -1;
@@ -1145,6 +1162,7 @@ struct parasite_ctl *parasite_infect_seized(pid_t pid, struct pstree_item *item,
 	int ret;
 	struct parasite_ctl *ctl;
 	unsigned long p, map_exchange_size;
+	k_rtsigset_t *sigmask;
 
 	BUG_ON(item->threads[0].real != pid);
 
@@ -1167,7 +1185,18 @@ struct parasite_ctl *parasite_infect_seized(pid_t pid, struct pstree_item *item,
 	map_exchange_size += RESTORE_STACK_SIGFRAME + PARASITE_STACK_SIZE;
 	if (item->nr_threads > 1)
 		map_exchange_size += PARASITE_STACK_SIZE;
-	ret = parasite_map_exchange(ctl, map_exchange_size);
+
+	ret = ptrace(PTRACE_GETSIGMASK, pid, sizeof(k_rtsigset_t),
+		&item->core[0]->tc->blk_sigset);
+	if (ret == -1) {
+		pr_perror("ptrace doesn't support PTRACE_GETSIGMASK\n");
+		sigmask = 0;
+	} else {
+		ctl->use_sig_blocked = 1;
+		sigmask = (k_rtsigset_t *) &item->core[0]->tc->blk_sigset;
+	}
+
+	ret = parasite_map_exchange(ctl, map_exchange_size, sigmask);
 	if (ret)
 		goto err_restore;
 
