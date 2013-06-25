@@ -178,6 +178,51 @@ static void mnt_tree_show(struct mount_info *tree, int off)
 	pr_info("%*s<--\n", off, "");
 }
 
+static int collect_shared(struct mount_info *info)
+{
+	struct mount_info *m, *t;
+
+	/*
+	 * If we have a shared mounts, both master
+	 * slave targets are to be present in mount
+	 * list, otherwise we can't be sure if we can
+	 * recreate the scheme later on restore.
+	 */
+	for (m = info; m; m = m->next) {
+		bool need_share, need_master;
+
+		need_share = m->shared_id && list_empty(&m->mnt_share);
+		need_master = m->master_id;
+
+		for (t = info; t && (need_share || need_master); t = t->next) {
+			if (t == m)
+				continue;
+			if (need_master && t->shared_id == m->master_id) {
+				pr_debug("The mount %d is slave for %d\n", m->mnt_id, t->mnt_id);
+				list_add(&m->mnt_slave, &t->mnt_slave_list);
+				m->mnt_master = t;
+				need_master = false;
+			}
+
+			/* Collect all mounts from this group */
+			if (need_share && t->shared_id == m->shared_id) {
+				pr_debug("Mount %d is shared with %d group %d\n",
+						m->mnt_id, t->mnt_id, m->shared_id);
+				list_add(&t->mnt_share, &m->mnt_share);
+			}
+		}
+		if (!need_master)
+			continue;
+
+		pr_err("Mount %d (master_id: %d shared_id: %d) "
+		       "has unreachable sharing\n", m->mnt_id,
+			m->master_id, m->shared_id);
+		return -1;
+	}
+
+	return 0;
+}
+
 static struct mount_info *mnt_build_tree(struct mount_info *list)
 {
 	struct mount_info *tree;
@@ -192,6 +237,7 @@ static struct mount_info *mnt_build_tree(struct mount_info *list)
 		return NULL;
 
 	mnt_resort_siblings(tree);
+	collect_shared(tree);
 	pr_info("Done:\n");
 	mnt_tree_show(tree, 0);
 	return tree;
@@ -396,36 +442,6 @@ static inline int is_root_mount(struct mount_info *mi)
 	return is_root(mi->mountpoint);
 }
 
-static int validate_shared(struct mount_info *info)
-{
-	struct mount_info *m, *t;
-
-	/*
-	 * If we have a shared mounts, both master
-	 * slave targets are to be present in mount
-	 * list, otherwise we can't be sure if we can
-	 * recreate the scheme later on restore.
-	 */
-	for (m = info; m; m = m->next) {
-		if (!m->master_id)
-			continue;
-
-		for (t = info; t; t = t->next) {
-			if (t->shared_id == m->master_id)
-				break;
-		}
-		if (t)
-			continue;
-
-		pr_err("Mount %d (master_id: %d shared_id: %d) "
-		       "has unreachable sharing\n", m->mnt_id,
-			m->master_id, m->shared_id);
-		return -1;
-	}
-
-	return 0;
-}
-
 static int dump_one_mountpoint(struct mount_info *pm, int fd)
 {
 	MntEntry me = MNT_ENTRY__INIT;
@@ -469,7 +485,7 @@ int dump_mnt_ns(int ns_pid, struct cr_fdset *fdset)
 		return -1;
 	}
 
-	if (validate_shared(mntinfo)) {
+	if (collect_shared(mntinfo)) {
 		pr_err("Can't proceed %d's mountinfo\n", ns_pid);
 		return -1;
 	}
@@ -682,6 +698,9 @@ struct mount_info *mnt_entry_alloc()
 	if (new) {
 		INIT_LIST_HEAD(&new->children);
 		INIT_LIST_HEAD(&new->siblings);
+		INIT_LIST_HEAD(&new->mnt_slave_list);
+		INIT_LIST_HEAD(&new->mnt_share);
+		new->mnt_master = NULL;
 	}
 	return new;
 }
