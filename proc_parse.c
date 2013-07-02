@@ -1176,6 +1176,10 @@ int parse_posix_timers(pid_t pid, struct proc_posix_timers_stat *args)
 
 	file = fopen_proc(pid, "timers");
 	if (file == NULL) {
+		if (errno == ENOENT) {
+			pr_warn("Dump of posix timers isn't supported by this kernel\n");
+			return 0;
+		}
 		pr_perror("Can't open posix timers file!");
 		return -1;
 	}
