@@ -461,6 +461,10 @@ static int dump_one_mountpoint(struct mount_info *pm, int fd)
 	me.mountpoint		= pm->mountpoint;
 	me.source		= pm->source;
 	me.options		= pm->options;
+	me.group		= pm->shared_id;
+	me.has_group		= true;
+	me.master		= pm->master_id;
+	me.has_master		= true;
 
 	if (!me.fstype && !is_root_mount(pm)) {
 		pr_err("FS mnt %s dev %#x root %s unsupported\n",
@@ -749,6 +753,8 @@ static int populate_mnt_ns(int ns_pid)
 		pm->parent_mnt_id	= me->parent_mnt_id;
 		pm->s_dev		= me->root_dev;
 		pm->flags		= me->flags;
+		pm->shared_id		= me->group;
+		pm->master_id		= me->master;
 
 		/* FIXME: abort unsupported early */
 		pm->fstype		= decode_fstype(me->fstype);
