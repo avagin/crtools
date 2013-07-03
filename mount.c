@@ -510,7 +510,9 @@ int dump_mnt_ns(int ns_pid, struct cr_fdset *fdset)
 	return 0;
 }
 
-#define MNT_TREE_WALK(_mi, _el, _fn_f, _fn_r) do {				\
+#define MNT_TREE_WALK(_r, _el, _fn_f, _fn_r) do {				\
+		struct mount_info *_mi = _r;					\
+										\
 		while (1) {							\
 			if (_fn_f(_mi))						\
 				return -1;					\
@@ -522,7 +524,7 @@ int dump_mnt_ns(int ns_pid, struct cr_fdset *fdset)
 	up:									\
 			if (_fn_r(_mi))						\
 				return -1;					\
-			if (_mi->parent == NULL)				\
+			if (_mi == _r)						\
 				return 0;					\
 			if (_mi->siblings._el == &_mi->parent->children) {	\
 				_mi = _mi->parent;				\
