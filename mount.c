@@ -510,12 +510,25 @@ int dump_mnt_ns(int ns_pid, struct cr_fdset *fdset)
 	return 0;
 }
 
-#define MNT_TREE_WALK(_r, _el, _fn_f, _fn_r) do {				\
+static int mount_progress;
+
+#define MNT_TREE_WALK(_r, _el, _fn_f, _fn_r, _plist) do {			\
 		struct mount_info *_mi = _r;					\
 										\
 		while (1) {							\
-			if (_fn_f(_mi))						\
+			int ret;						\
+										\
+			ret = _fn_f(_mi);					\
+			if (ret < 0)						\
 				return -1;					\
+			else if (ret > 0) {					\
+				list_add_tail(&_mi->postpone, _plist);		\
+				goto up;					\
+			}							\
+										\
+			list_del(&_mi->postpone);				\
+			mount_progress++;					\
+										\
 			if (!list_empty(&_mi->children)) {			\
 				_mi = list_entry(_mi->children._el,		\
 						struct mount_info, siblings);	\
@@ -541,13 +554,32 @@ int dump_mnt_ns(int ns_pid, struct cr_fdset *fdset)
 static int mnt_tree_for_each(struct mount_info *m,
 		int (*fn)(struct mount_info *))
 {
-	MNT_TREE_WALK(m, next, fn, MNT_WALK_NONE);
+	static LIST_HEAD(postpone);
+
+	list_add(&m->postpone, &postpone);
+
+	while (!list_empty(&postpone)) {
+		int old = mount_progress;
+		list_for_each_entry(m, &postpone, postpone)
+			MNT_TREE_WALK(m, next, fn, MNT_WALK_NONE, &postpone);
+		if (old == mount_progress) {
+			pr_err("A few mount points can't be mounted");
+			list_for_each_entry(m, &postpone, postpone) {
+				pr_err("%d:%d %s %s %s\n", m->mnt_id,
+					m->parent_mnt_id, m->root,
+					m->mountpoint, m->source);
+			}
+			return -1;
+		}
+	}
+
+	return 0;
 }
 
 static int mnt_tree_for_each_reverse(struct mount_info *m,
 		int (*fn)(struct mount_info *))
 {
-	MNT_TREE_WALK(m, prev, MNT_WALK_NONE, fn);
+	MNT_TREE_WALK(m, prev, MNT_WALK_NONE, fn, (struct list_head *) NULL);
 }
 
 static char *resolve_source(struct mount_info *mi)
