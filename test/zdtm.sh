@@ -425,10 +425,14 @@ EOF
 	done
 
 	echo Check results $PID
-	stop_test $tdir $tname
+	stop_test $tdir $tname || {
+		echo "Unable to stop $tname ($PID)"
+		return 2
+	}
+
 	sltime=1
 	for i in `seq 50`; do
-		test -f $test.out && break
+		kill -0 $PID || break
 		echo Waiting...
 		sleep 0.$sltime
 		[ $sltime -lt 9 ] && sltime=$((sltime+1))
