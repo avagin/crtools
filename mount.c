@@ -77,6 +77,16 @@ struct mount_info *lookup_mnt_sdev(unsigned int s_dev)
 	return NULL;
 }
 
+/* two bind-mounts are reported as equal if bind is true */
+static bool mntcmp(struct mount_info* mi, struct mount_info *c, bool bind)
+{
+	return (mi->s_dev == c->s_dev &&
+		(bind || !strcmp(c->root, mi->root)) &&
+		!strcmp(c->source, mi->source) &&
+		!strcmp(c->options, mi->options) &&
+		c->fstype == mi->fstype);
+}
+
 static struct mount_info *mnt_build_ids_tree(struct mount_info *list)
 {
 	struct mount_info *m, *root = NULL;
@@ -595,6 +605,49 @@ static char *resolve_source(struct mount_info *mi)
 	return NULL;
 }
 
+static inline int fsroot_mounted(struct mount_info *mi)
+{
+	return is_root(mi->root);
+}
+
+static int propogate_mount(struct mount_info *mi)
+{
+	struct mount_info *t;
+
+	list_for_each_entry(t, &mi->mnt_share, mnt_share)
+		t->bind = mi;
+
+	list_for_each_entry(t, &mi->mnt_slave_list, mnt_slave)
+		t->bind = mi;
+
+	/* Mart this mnt as mounted for all who in this group */
+	list_for_each_entry(t, &mi->parent->mnt_share, mnt_share) {
+		struct mount_info *c;
+
+		list_for_each_entry(c, &t->children, siblings) {
+			if (mntcmp(mi, c, false))
+				t->mounted = true;
+		}
+	}
+
+	list_for_each_entry(t, &mi->parent->mnt_slave_list, mnt_slave) {
+		struct mount_info *c;
+		list_for_each_entry(c, &t->children, siblings) {
+			if (mntcmp(mi, c, false))
+				t->mounted = true;
+		}
+	}
+
+	if (fsroot_mounted(mi))
+		list_for_each_entry(t, &mi->mnt_bind, mnt_bind) {
+			if (t->bind)
+				continue;
+			t->bind = mi;
+		}
+
+	return 0;
+}
+
 static int do_new_mount(struct mount_info *mi)
 {
 	char *src;
@@ -612,6 +665,9 @@ static int do_new_mount(struct mount_info *mi)
 
 	if (tp->restore && tp->restore(mi))
 		return -1;
+
+	if (propogate_mount(mi))
+		return 0;
 
 	return 0;
 }
@@ -738,6 +794,7 @@ struct mount_info *mnt_entry_alloc()
 		INIT_LIST_HEAD(&new->siblings);
 		INIT_LIST_HEAD(&new->mnt_slave_list);
 		INIT_LIST_HEAD(&new->mnt_share);
+		INIT_LIST_HEAD(&new->mnt_bind);
 		new->mnt_master = NULL;
 	}
 	return new;
