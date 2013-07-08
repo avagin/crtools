@@ -661,21 +661,49 @@ static int do_new_mount(struct mount_info *mi)
 {
 	char *src;
 	struct fstype *tp = mi->fstype;
+	struct mount_info *t;
 
 	src = resolve_source(mi);
 	if (!src)
 		return -1;
 
-	if (!fsroot_mounted(mi)) {
+	if (!fsroot_mounted(mi) || (mi->flags & MS_SLAVE)) {
 		pr_debug("Postpone %s\n", mi->mountpoint);
 		return 1;
 	}
 
+	/* Wait while all parent are not mounted */
+	/*
+	 * FIXME a child is shared only between parents,
+	 * who was present in a moment of birth
+	 */
+	if (mi->parent->flags & MS_SHARED) {
+		list_for_each_entry(t, &mi->parent->mnt_share, mnt_share)
+			if (!t->mounted) {
+				pr_debug("Postpone %s\n", mi->mountpoint);
+				return 1;
+			}
+		list_for_each_entry(t, &mi->parent->mnt_slave_list, mnt_slave)
+			if (!t->mounted) {
+				pr_debug("Postpone %s\n", mi->mountpoint);
+				return 1;
+			}
+	}
+
 	if (mount(src, mi->mountpoint, tp->name,
-				mi->flags, mi->options) < 0) {
+			mi->flags & (~MS_SHARED), mi->options) < 0) {
 		pr_perror("Can't mount at %s", mi->mountpoint);
 		return -1;
 	}
+
+	if (mi->flags & MS_SHARED) {
+		if (mount(NULL, mi->mountpoint, NULL, MS_SHARED, NULL) < 0) {
+			pr_perror("Can't mark %s as shared", mi->mountpoint);
+			return -1;
+		}
+	}
+
+	mi->mounted = true;
 
 	if (tp->restore && tp->restore(mi))
 		return -1;
@@ -703,6 +731,21 @@ static int do_bind_mount(struct mount_info *mi)
 				MS_BIND, NULL) < 0) {
 		pr_perror("Can't mount at %s", mi->mountpoint);
 		return -1;
+	}
+
+	if ((!(mi->bind->flags & MS_SHARED)) && (mi->flags & MS_SHARED)) {
+		pr_debug("share %d %d", mi->bind->flags & MS_SHARED, mi->flags & MS_SHARED);
+		if (mount(NULL, mi->mountpoint, NULL, MS_SHARED, NULL) < 0) {
+			pr_perror("Can't mark %s as shared", mi->mountpoint);
+			return -1;
+		}
+	}
+
+	if (mi->flags & MS_SLAVE) {
+		if (mount(NULL, mi->mountpoint, NULL, MS_SLAVE, NULL) < 0) {
+			pr_perror("Can't mark %s as shared", mi->mountpoint);
+			return -1;
+		}
 	}
 
 	if (propogate_mount(mi))
@@ -823,6 +866,7 @@ struct mount_info *mnt_entry_alloc()
 		INIT_LIST_HEAD(&new->mnt_slave_list);
 		INIT_LIST_HEAD(&new->mnt_share);
 		INIT_LIST_HEAD(&new->mnt_bind);
+		INIT_LIST_HEAD(&new->postpone);
 		new->mnt_master = NULL;
 	}
 	return new;
