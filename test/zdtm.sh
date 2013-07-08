@@ -491,6 +491,8 @@ EOF
 
 		[ -n "$dump_only" ] && postdump=$POSTDUMP
 
+		cat /proc/$PID/mountinfo > $ddump/dump.mountinfo
+
 		save_fds $PID  $ddump/dump.fd
 		save_maps $PID  $ddump/dump.maps
 		setsid $CRIU_CPT $dump_cmd $opts --file-locks --tcp-established $linkremap \
@@ -553,8 +555,9 @@ EOF
 
 			echo Restore
 			setsid $CRIU restore --file-locks --tcp-established -x -D $ddump -o restore.log -v4 -d $args || return 2
-
 			[ -n "$PIDNS" ] && PID=`cat $TPID`
+			cat /proc/$PID/mountinfo > $ddump/restore.mountinfo
+			[ `cat $ddump/restore.mountinfo | wc -l` -ne `cat $ddump/dump.mountinfo | wc -l` ] && return 2
 			for i in `seq 5`; do
 				save_fds $PID  $ddump/restore.fd
 				diff_fds $ddump/dump.fd $ddump/restore.fd && break
