@@ -371,6 +371,7 @@ EOF
 			[ -n "$snappdir" ] && snapopt="$snapopt --prev-images-dir=$snappdir"
 		fi
 
+		cat /proc/$PID/mountinfo > $ddump/dump.mountinfo
 		save_fds $PID  $ddump/dump.fd
 		setsid $CRIU_CPT dump $opts --file-locks --tcp-established $linkremap \
 			-x --evasive-devices -D $ddump -o dump.log -v4 -t $PID $args $ARGS $snapopt || {
@@ -412,14 +413,15 @@ EOF
 
 			echo Restore
 			setsid $CRIU restore --file-locks --tcp-established -x -D $ddump -o restore.log -v4 -d $args || return 2
-
+			[ -n "$PIDNS" ] && PID=`cat $TPID`
+			cat /proc/$PID/mountinfo > $ddump/restore.mountinfo
+			[ `cat $ddump/restore.mountinfo | wc -l` -ne `cat $ddump/dump.mountinfo | wc -l` ] && return 2
 			for i in `seq 5`; do
 				save_fds $PID  $ddump/restore.fd
 				diff_fds $ddump/dump.fd $ddump/restore.fd && break
 				sleep 0.2
 			done
 			[ $i -eq 5 ] && return 2;
-			[ -n "$PIDNS" ] && PID=`cat $TPID`
 		fi
 
 	done
