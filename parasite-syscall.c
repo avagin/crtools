@@ -68,15 +68,23 @@ static struct vma_area *get_vma_by_ip(struct list_head *vma_area_list, unsigned 
 /* we run at @regs->ip */
 static int __parasite_execute_trap(struct parasite_ctl *ctl, pid_t pid,
 				user_regs_struct_t *regs,
-				user_regs_struct_t *regs_orig)
+				user_regs_struct_t *regs_orig,
+				k_rtsigset_t *sigmask)
 {
+	k_rtsigset_t blockall;
 	siginfo_t siginfo;
 	int status;
 	int ret = -1;
 
+	ksigfillset(&blockall);
+	if (ptrace(PTRACE_SETSIGMASK, pid, sizeof(k_rtsigset_t), &blockall)) {
+		pr_perror("Can't block signals");
+		return -1;
+	}
+
 	if (ptrace(PTRACE_SETREGS, pid, NULL, regs)) {
 		pr_perror("Can't set registers (pid: %d)", pid);
-		goto err;
+		goto err_sigmask;
 	}
 
 	/*
@@ -128,6 +136,11 @@ err:
 		pr_perror("Can't restore registers (pid: %d)", pid);
 		ret = -1;
 	}
+err_sigmask:
+	if (ptrace(PTRACE_SETSIGMASK, pid, sizeof(k_rtsigset_t), &sigmask)) {
+		pr_perror("Can't block signals");
+		ret = -1;
+	}
 	return ret;
 }
 
@@ -148,7 +161,8 @@ int __parasite_execute_syscall(struct parasite_ctl *ctl, user_regs_struct_t *reg
 	}
 
 	parasite_setup_regs(ctl->syscall_ip, 0, regs);
-	err = __parasite_execute_trap(ctl, pid, regs, &ctl->regs_orig);
+	err = __parasite_execute_trap(ctl, pid, regs, &ctl->regs_orig,
+							&ctl->sig_blocked);
 
 	if (ptrace_poke_area(pid, (void *)ctl->code_orig,
 			     (void *)ctl->syscall_ip, sizeof(ctl->code_orig))) {
@@ -168,7 +182,8 @@ void *parasite_args_s(struct parasite_ctl *ctl, int args_size)
 static int parasite_execute_trap_by_pid(unsigned int cmd,
 					struct parasite_ctl *ctl, pid_t pid,
 					user_regs_struct_t *regs_orig,
-					void *stack)
+					void *stack,
+					k_rtsigset_t *sigmask)
 {
 	user_regs_struct_t regs = *regs_orig;
 	int ret;
@@ -177,7 +192,7 @@ static int parasite_execute_trap_by_pid(unsigned int cmd,
 
 	parasite_setup_regs(ctl->parasite_ip, stack, &regs);
 
-	ret = __parasite_execute_trap(ctl, pid, &regs, regs_orig);
+	ret = __parasite_execute_trap(ctl, pid, &regs, regs_orig, sigmask);
 	if (ret == 0)
 		ret = (int)REG_RES(regs);
 
@@ -434,16 +449,7 @@ static int dump_thread(struct parasite_ctl *ctl, int id,
 {
 	user_regs_struct_t regs_orig;
 	pid_t pid = tid->real;
-	k_rtsigset_t maskall;
 	int ret;
-
-	ksigfillset(&maskall);
-
-	ret = ptrace(PTRACE_SETSIGMASK, pid, sizeof(k_rtsigset_t), &maskall);
-	if (ret) {
-		pr_perror("Can't get signal blocking mask for %d", pid);
-		return -1;
-	}
 
 	ret = ptrace(PTRACE_GETREGS, pid, NULL, &regs_orig);
 	if (ret) {
@@ -453,7 +459,8 @@ static int dump_thread(struct parasite_ctl *ctl, int id,
 
 	ret = parasite_execute_trap_by_pid(PARASITE_CMD_DUMP_THREAD, ctl,
 					pid, &regs_orig,
-					ctl->r_thread_stack);
+					ctl->r_thread_stack,
+				(k_rtsigset_t *) &core->thread_core->blk_sigset);
 	if (ret) {
 		pr_err("Can't init thread in parasite %d\n", pid);
 		goto out;
@@ -464,12 +471,6 @@ static int dump_thread(struct parasite_ctl *ctl, int id,
 		pr_err("Can't obtain regs for thread %d\n", pid);
 
 out:
-	if (ptrace(PTRACE_SETSIGMASK, pid, sizeof(k_rtsigset_t),
-					&core->thread_core->blk_sigset)) {
-		pr_perror("Can't restore signal blocking mask for %d", pid);
-		ret = -1;
-	}
-
 	return ret;
 }
 
@@ -849,16 +850,8 @@ int parasite_cure_remote(struct parasite_ctl *ctl)
 		k_rtsigset_t blockall;
 		ksigfillset(&blockall);
 
-		if (ptrace(PTRACE_SETSIGMASK, ctl->pid.real, sizeof(k_rtsigset_t), &blockall)) {
-			pr_perror("Unable to block signals\n");
-			return -1;
-		}
 		if (munmap_seized(ctl, (void *)ctl->remote_map, ctl->map_length)) {
 			pr_err("munmap_seized failed (pid: %d)\n", ctl->pid.real);
-			ret = -1;
-		}
-		if (ptrace(PTRACE_SETSIGMASK, ctl->pid.real, sizeof(k_rtsigset_t), ctl->sig_blocked)) {
-			pr_perror("Unable to block signals\n");
 			ret = -1;
 		}
 	}
@@ -945,19 +938,9 @@ int parasite_map_exchange(struct parasite_ctl *ctl, unsigned long size)
 	k_rtsigset_t blockall;
 	ksigfillset(&blockall);
 
-	if (ptrace(PTRACE_SETSIGMASK, ctl->pid.real, sizeof(k_rtsigset_t), &blockall)) {
-		pr_perror("Unable to block signals\n");
-		return -1;
-	}
-
 	ctl->remote_map = mmap_seized(ctl, NULL, size,
 				      PROT_READ | PROT_WRITE | PROT_EXEC,
 				      MAP_ANONYMOUS | MAP_SHARED, -1, 0);
-
-	if (ptrace(PTRACE_SETSIGMASK, ctl->pid.real, sizeof(k_rtsigset_t), &ctl->sig_blocked)) {
-		pr_perror("Unable to block signals\n");
-		return -1;
-	}
 
 	if (!ctl->remote_map) {
 		pr_err("Can't allocate memory for parasite blob (pid: %d)\n", ctl->pid.real);
