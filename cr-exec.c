@@ -35,6 +35,8 @@ static int execute_syscall(struct parasite_ctl *ctl,
 	int i, err;
 	unsigned long args[MAX_ARGS] = {}, ret, r_mem_size = 0;
 	unsigned int ret_args[MAX_ARGS] = {};
+	k_rtsigset_t blk_allsig, blk_sigset;
+	pid_t pid = ctl->pid.real;
 	void *r_mem = NULL;
 
 	for (i = 0; i < MAX_ARGS; i++) {
@@ -87,8 +89,27 @@ static int execute_syscall(struct parasite_ctl *ctl,
 	pr_info("Calling %d with %lu %lu %lu %lu %lu %lu\n", scd->nr,
 			args[0], args[1], args[2], args[3], args[4], args[5]);
 
+	ret = ptrace(PTRACE_GETSIGMASK, ctl->pid, sizeof(k_rtsigset_t), &blk_sigset);
+	if (ret) {
+		pr_warn("ptrace can't get signal blocking mask for %d", pid);
+		return -1;
+	}
+
+	ksigfillset(&blk_allsig);
+	err = ptrace(PTRACE_SETSIGMASK, pid, sizeof(k_rtsigset_t), &blk_allsig);
+	if (err) {
+		pr_perror("Can't get signal blocking mask for %d", pid);
+		return -1;
+	}
+
 	err = syscall_seized(ctl, scd->nr, &ret,
 			args[0], args[1], args[2], args[3], args[4], args[5]);
+
+	if (ptrace(PTRACE_SETSIGMASK, pid, sizeof(k_rtsigset_t), &blk_sigset)) {
+		pr_perror("Can't get signal blocking mask for %d", pid);
+		return -1;
+	}
+
 	if (err)
 		return err;
 
