@@ -210,40 +210,6 @@ static int dump_thread(struct parasite_dump_thread *args)
 	return 0;
 }
 
-static int init_thread(struct parasite_dump_thread *args)
-{
-	k_rtsigset_t to_block;
-	pid_t tid = sys_gettid();
-	int ret;
-
-	ksigfillset(&to_block);
-	ret = sys_sigprocmask(SIG_SETMASK, &to_block,
-			      &args->blocked,
-			      sizeof(k_rtsigset_t));
-	if (ret)
-		return -1;
-
-	ret = sys_prctl(PR_GET_TID_ADDRESS, (unsigned long) &args->tid_addr, 0, 0, 0);
-	if (ret)
-		goto err;
-
-	args->tid = tid;
-	args->tls = arch_get_tls();
-
-
-	return ret;
-err:
-	sys_sigprocmask(SIG_SETMASK, &args->blocked,
-				NULL, sizeof(k_rtsigset_t));
-	return ret;
-}
-
-static int fini_thread(struct parasite_dump_thread *args)
-{
-	return sys_sigprocmask(SIG_SETMASK, &args->blocked,
-				NULL, sizeof(k_rtsigset_t));
-}
-
 static int init(struct parasite_init_args *args)
 {
 	k_rtsigset_t to_block;
@@ -614,10 +580,6 @@ int __used parasite_service(unsigned int cmd, void *args)
 		return init(args);
 	case PARASITE_CMD_DUMP_THREAD:
 		return dump_thread(args);
-	case PARASITE_CMD_INIT_THREAD:
-		return init_thread(args);
-	case PARASITE_CMD_FINI_THREAD:
-		return fini_thread(args);
 	case PARASITE_CMD_CFG_LOG:
 		return parasite_cfg_log(args);
 	case PARASITE_CMD_DAEMONIZE:

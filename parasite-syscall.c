@@ -560,51 +560,7 @@ err:
 	return -1;
 }
 
-static int dump_thread_in_two_stage(struct parasite_ctl *ctl, int id,
-				struct pid *tid, CoreEntry *core)
-{
-	struct parasite_dump_thread *args;
-	user_regs_struct_t regs_orig;
-	pid_t pid = tid->real;
-	int ret;
-
-	args = parasite_args(ctl, struct parasite_dump_thread);
-
-	ret = ptrace(PTRACE_GETREGS, pid, NULL, &regs_orig);
-	if (ret) {
-		pr_perror("Can't obtain registers (pid: %d)", pid);
-		return -1;
-	}
-
-	ret = parasite_execute_trap_by_pid(PARASITE_CMD_INIT_THREAD, ctl,
-					pid, &regs_orig,
-					ctl->r_thread_stack, false);
-	if (ret) {
-		pr_err("Can't init thread in parasite %d\n", pid);
-		return -1;
-	}
-
-	ret = get_task_regs(pid, regs_orig, core);
-	if (ret)
-		pr_err("Can't obtain regs for thread %d\n", pid);
-
-	if (parasite_execute_trap_by_pid(PARASITE_CMD_FINI_THREAD, ctl,
-					pid, &regs_orig,
-					ctl->r_thread_stack, true)) {
-		pr_err("FATAL: Can't fini thread in parasite %d\n", pid);
-		return -1;
-	}
-	if (ret)
-		return -1;
-
-	memcpy(&core->thread_core->blk_sigset,
-		&args->blocked, sizeof(k_rtsigset_t));
-
-	core->thread_core->has_blk_sigset = true;
-	return 0;
-}
-
-static int dump_thread_in_one_stage(struct parasite_ctl *ctl, int id,
+static int dump_thread(struct parasite_ctl *ctl, int id,
 				struct pid *tid, CoreEntry *core)
 {
 	user_regs_struct_t regs_orig;
@@ -664,12 +620,11 @@ int parasite_dump_thread_seized(struct parasite_ctl *ctl, int id,
 						&core->thread_core->blk_sigset);
 		if (ret) {
 			pr_warn("ptrace can't get signal blocking mask for %d", pid);
-			ret = dump_thread_in_two_stage(ctl, id, tid, core);
-		} else {
-			core->thread_core->has_blk_sigset = true;
-
-			ret = dump_thread_in_one_stage(ctl, id, tid, core);
+			return -1;
 		}
+
+		core->thread_core->has_blk_sigset = true;
+		ret = dump_thread(ctl, id, tid, core);
 
 	}
 
