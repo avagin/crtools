@@ -66,7 +66,7 @@ static struct vma_area *get_vma_by_ip(struct list_head *vma_area_list, unsigned 
 }
 
 /* we run at @regs->ip */
-int __parasite_execute_trap(struct parasite_ctl *ctl, pid_t pid,
+static int __parasite_execute_trap(struct parasite_ctl *ctl, pid_t pid,
 				user_regs_struct_t *regs,
 				user_regs_struct_t *regs_orig)
 {
@@ -129,6 +129,34 @@ err:
 		ret = -1;
 	}
 	return ret;
+}
+
+int __parasite_execute_syscall(struct parasite_ctl *ctl, user_regs_struct_t *regs)
+{
+	pid_t pid = ctl->pid.real;
+	int err;
+
+	/*
+	 * Inject syscall instruction and remember original code,
+	 * we will need it to restore original program content.
+	 */
+	memcpy(ctl->code_orig, code_syscall, sizeof(ctl->code_orig));
+	if (ptrace_swap_area(pid, (void *)ctl->syscall_ip,
+			     (void *)ctl->code_orig, sizeof(ctl->code_orig))) {
+		pr_err("Can't inject syscall blob (pid: %d)\n", pid);
+		return -1;
+	}
+
+	parasite_setup_regs(ctl->syscall_ip, 0, regs);
+	err = __parasite_execute_trap(ctl, pid, regs, &ctl->regs_orig);
+
+	if (ptrace_poke_area(pid, (void *)ctl->code_orig,
+			     (void *)ctl->syscall_ip, sizeof(ctl->code_orig))) {
+		pr_err("Can't restore syscall blob (pid: %d)\n", ctl->pid.real);
+		err = -1;
+	}
+
+	return err;
 }
 
 void *parasite_args_s(struct parasite_ctl *ctl, int args_size)
@@ -820,16 +848,21 @@ int parasite_cure_remote(struct parasite_ctl *ctl)
 	close_safe(&ctl->tsock);
 
 	if (ctl->remote_map) {
+		k_rtsigset_t blockall;
+		ksigfillset(&blockall);
+
+		if (ptrace(PTRACE_SETSIGMASK, ctl->pid.real, sizeof(k_rtsigset_t), &blockall)) {
+			pr_perror("Unable to block signals\n");
+			return -1;
+		}
 		if (munmap_seized(ctl, (void *)ctl->remote_map, ctl->map_length)) {
 			pr_err("munmap_seized failed (pid: %d)\n", ctl->pid.real);
 			ret = -1;
 		}
-	}
-
-	if (ptrace_poke_area(ctl->pid.real, (void *)ctl->code_orig,
-			     (void *)ctl->syscall_ip, sizeof(ctl->code_orig))) {
-		pr_err("Can't restore syscall blob (pid: %d)\n", ctl->pid.real);
-		ret = -1;
+		if (ptrace(PTRACE_SETSIGMASK, ctl->pid.real, sizeof(k_rtsigset_t), ctl->sig_blocked)) {
+			pr_perror("Unable to block signals\n");
+			ret = -1;
+		}
 	}
 
 	return ret;
@@ -895,17 +928,6 @@ struct parasite_ctl *parasite_prep_ctl(pid_t pid, struct vm_area_list *vma_area_
 	ctl->pid.real	= pid;
 	ctl->pid.virt	= 0;
 	ctl->syscall_ip	= vma_area->vma.start;
-
-	/*
-	 * Inject syscall instruction and remember original code,
-	 * we will need it to restore original program content.
-	 */
-	memcpy(ctl->code_orig, code_syscall, sizeof(ctl->code_orig));
-	if (ptrace_swap_area(pid, (void *)ctl->syscall_ip,
-			     (void *)ctl->code_orig, sizeof(ctl->code_orig))) {
-		pr_err("Can't inject syscall blob (pid: %d)\n", pid);
-		goto err;
-	}
 
 	return ctl;
 
