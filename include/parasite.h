@@ -27,7 +27,6 @@ enum {
 	/*
 	 * These two must be greater than INITs.
 	 */
-	PARASITE_CMD_DAEMONIZE,
 	PARASITE_CMD_DAEMONIZED,
 
 	PARASITE_CMD_FINI,

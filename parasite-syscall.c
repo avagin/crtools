@@ -448,7 +448,7 @@ static int parasite_init_daemon(struct parasite_ctl *ctl)
 
 	pr_info("Wait for parasite being daemonized...\n");
 
-	if (parasite_wait_ack(ctl->tsock, PARASITE_CMD_DAEMONIZE, &m)) {
+	if (parasite_wait_ack(ctl->tsock, PARASITE_CMD_INIT_DAEMON, &m)) {
 		pr_err("Can't switch parasite %d to daemon mode %d\n",
 		       pid, m.err);
 		goto err;

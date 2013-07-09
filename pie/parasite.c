@@ -416,7 +416,7 @@ static noinline __used int noinline parasite_daemon(void *args)
 	pr_debug("Running daemon thread leader\n");
 
 	/* Reply we're alive */
-	if (__parasite_daemon_reply_ack(PARASITE_CMD_DAEMONIZE, 0))
+	if (__parasite_daemon_reply_ack(PARASITE_CMD_INIT_DAEMON, 0))
 		goto out;
 
 	ret = 0;
@@ -533,8 +533,6 @@ int __used parasite_service(unsigned int cmd, void *args)
 	switch (cmd) {
 	case PARASITE_CMD_DUMP_THREAD:
 		return dump_thread(args);
-	case PARASITE_CMD_DAEMONIZE:
-		return parasite_daemon(args);
 	case PARASITE_CMD_INIT_DAEMON:
 		return parasite_init_daemon(args);
 	}
