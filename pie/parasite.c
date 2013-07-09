@@ -210,37 +210,6 @@ static int dump_thread(struct parasite_dump_thread *args)
 	return 0;
 }
 
-static int init(struct parasite_init_args *args)
-{
-	k_rtsigset_t to_block;
-	int ret;
-
-	sigframe = args->sigframe;
-
-	ksigfillset(&to_block);
-	ret = sys_sigprocmask(SIG_SETMASK, &to_block,
-			      &args->sig_blocked,
-			      sizeof(k_rtsigset_t));
-	if (ret)
-		return -1;
-
-	tsock = sys_socket(PF_UNIX, SOCK_STREAM, 0);
-	if (tsock < 0) {
-		ret = tsock;
-		goto err;
-	}
-
-	ret = sys_connect(tsock, (struct sockaddr *)&args->h_addr, args->h_addr_len);
-	if (ret < 0)
-		goto err;
-
-	return 0;
-err:
-	sys_sigprocmask(SIG_SETMASK, &args->sig_blocked,
-				NULL, sizeof(k_rtsigset_t));
-	return ret;
-}
-
 static char proc_mountpoint[] = "proc.crtools";
 static int parasite_get_proc_fd()
 {
@@ -357,20 +326,6 @@ err:
 	args->hangup = true;
 
 	return 0;
-}
-
-static int parasite_cfg_log(struct parasite_log_args *args)
-{
-	int ret;
-
-	ret = recv_fd(tsock);
-	if (ret >= 0) {
-		log_set_fd(ret);
-		log_set_loglevel(args->log_level);
-		ret = 0;
-	}
-
-	return ret;
 }
 
 static int parasite_check_vdso_mark(struct parasite_vdso_vma_entry *args)
@@ -576,12 +531,8 @@ int __used parasite_service(unsigned int cmd, void *args)
 	pr_info("Parasite cmd %d/%x process\n", cmd, cmd);
 
 	switch (cmd) {
-	case PARASITE_CMD_INIT:
-		return init(args);
 	case PARASITE_CMD_DUMP_THREAD:
 		return dump_thread(args);
-	case PARASITE_CMD_CFG_LOG:
-		return parasite_cfg_log(args);
 	case PARASITE_CMD_DAEMONIZE:
 		return parasite_daemon(args);
 	case PARASITE_CMD_INIT_DAEMON:
