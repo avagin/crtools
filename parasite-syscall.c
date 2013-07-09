@@ -815,8 +815,6 @@ static int parasite_fini_seized(struct parasite_ctl *ctl)
 		}
 	}
 
-	ctl->use_sig_blocked = false;
-
 	ret = ptrace(PTRACE_SYSCALL, pid, NULL, NULL);
 	if (ret) {
 		pr_perror("ptrace");
@@ -913,6 +911,11 @@ struct parasite_ctl *parasite_prep_ctl(pid_t pid, struct vm_area_list *vma_area_
 
 	ctl->tsock = -1;
 
+	if (ptrace(PTRACE_GETSIGMASK, pid, sizeof(k_rtsigset_t), &ctl->sig_blocked)) {
+		pr_perror("ptrace doesn't support PTRACE_GETSIGMASK\n");
+		goto err;
+	}
+
 	if (ptrace(PTRACE_GETREGS, pid, NULL, &ctl->regs_orig)) {
 		pr_err("Can't obtain registers (pid: %d)\n", pid);
 		goto err;
@@ -936,7 +939,7 @@ err:
 	return NULL;
 }
 
-int parasite_map_exchange(struct parasite_ctl *ctl, unsigned long size, k_rtsigset_t *sigmask)
+int parasite_map_exchange(struct parasite_ctl *ctl, unsigned long size)
 {
 	int fd;
 	k_rtsigset_t blockall;
@@ -951,7 +954,7 @@ int parasite_map_exchange(struct parasite_ctl *ctl, unsigned long size, k_rtsigs
 				      PROT_READ | PROT_WRITE | PROT_EXEC,
 				      MAP_ANONYMOUS | MAP_SHARED, -1, 0);
 
-	if (ptrace(PTRACE_SETSIGMASK, ctl->pid.real, sizeof(k_rtsigset_t), sigmask)) {
+	if (ptrace(PTRACE_SETSIGMASK, ctl->pid.real, sizeof(k_rtsigset_t), &ctl->sig_blocked)) {
 		pr_perror("Unable to block signals\n");
 		return -1;
 	}
@@ -1021,7 +1024,6 @@ struct parasite_ctl *parasite_infect_seized(pid_t pid, struct pstree_item *item,
 	int ret;
 	struct parasite_ctl *ctl;
 	unsigned long p, map_exchange_size;
-	k_rtsigset_t *sigmask;
 
 	BUG_ON(item->threads[0].real != pid);
 
@@ -1045,17 +1047,9 @@ struct parasite_ctl *parasite_infect_seized(pid_t pid, struct pstree_item *item,
 	if (item->nr_threads > 1)
 		map_exchange_size += PARASITE_STACK_SIZE;
 
-	ret = ptrace(PTRACE_GETSIGMASK, pid, sizeof(k_rtsigset_t),
-		&item->core[0]->tc->blk_sigset);
-	if (ret == -1) {
-		pr_perror("ptrace doesn't support PTRACE_GETSIGMASK\n");
-		goto err_restore;
-	}
+	memcpy(&item->core[0]->tc->blk_sigset, &ctl->sig_blocked, sizeof(k_rtsigset_t));
 
-	ctl->use_sig_blocked = 1;
-	sigmask = (k_rtsigset_t *) &item->core[0]->tc->blk_sigset;
-
-	ret = parasite_map_exchange(ctl, map_exchange_size, sigmask);
+	ret = parasite_map_exchange(ctl, map_exchange_size);
 	if (ret)
 		goto err_restore;
 

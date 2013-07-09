@@ -29,7 +29,6 @@ struct parasite_ctl {
 	user_regs_struct_t	regs_orig;				/* original registers */
 
 	k_rtsigset_t		sig_blocked;
-	bool			use_sig_blocked;
 
 	void			*rstack;				/* thread leader stack*/
 	struct rt_sigframe	*sigframe;
@@ -90,7 +89,7 @@ extern struct parasite_ctl *parasite_infect_seized(pid_t pid,
 						   int timer_n);
 extern struct parasite_ctl *parasite_prep_ctl(pid_t pid,
 					      struct vm_area_list *vma_area_list);
-extern int parasite_map_exchange(struct parasite_ctl *ctl, unsigned long size, k_rtsigset_t *mask);
+extern int parasite_map_exchange(struct parasite_ctl *ctl, unsigned long size);
 
 extern struct parasite_tty_args *parasite_dump_tty(struct parasite_ctl *ctl, int fd);
 

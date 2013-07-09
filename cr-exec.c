@@ -52,7 +52,7 @@ static int execute_syscall(struct parasite_ctl *ctl,
 			int len;
 
 			if (!r_mem) {
-				err = parasite_map_exchange(ctl, PAGE_SIZE, NULL);
+				err = parasite_map_exchange(ctl, PAGE_SIZE);
 				if (err)
 					return err;
 
