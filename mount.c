@@ -221,13 +221,20 @@ static int collect_shared(struct mount_info *info)
 				list_add(&t->mnt_share, &m->mnt_share);
 			}
 		}
-		if (!need_master)
-			continue;
 
-		pr_err("Mount %d (master_id: %d shared_id: %d) "
-		       "has unreachable sharing\n", m->mnt_id,
-			m->master_id, m->shared_id);
-		return -1;
+		if (need_master) {
+			pr_err("Mount %d (master_id: %d shared_id: %d) "
+			       "has unreachable sharing\n", m->mnt_id,
+				m->master_id, m->shared_id);
+			return -1;
+		}
+
+		/* Search bind-mounts */
+		if (list_empty(&m->mnt_bind))
+			for (t = m->next; t; t = t->next) {
+				if (mntcmp(m, t, true))
+					list_add(&t->mnt_bind, &m->mnt_bind);
+			}
 	}
 
 	return 0;
@@ -642,6 +649,8 @@ static int propogate_mount(struct mount_info *mi)
 		list_for_each_entry(t, &mi->mnt_bind, mnt_bind) {
 			if (t->bind)
 				continue;
+			if (t->master_id)
+				continue;
 			t->bind = mi;
 		}
 
@@ -656,6 +665,11 @@ static int do_new_mount(struct mount_info *mi)
 	src = resolve_source(mi);
 	if (!src)
 		return -1;
+
+	if (!fsroot_mounted(mi)) {
+		pr_debug("Postpone %s\n", mi->mountpoint);
+		return 1;
+	}
 
 	if (mount(src, mi->mountpoint, tp->name,
 				mi->flags, mi->options) < 0) {
@@ -674,13 +688,27 @@ static int do_new_mount(struct mount_info *mi)
 
 static int do_bind_mount(struct mount_info *mi)
 {
-	pr_err("No bind mounts at %s\n", mi->mountpoint);
-	return -1;
-}
+	char rpath[PATH_MAX];
 
-static inline int fsroot_mounted(struct mount_info *mi)
-{
-	return is_root(mi->root);
+	if (mi->bind == NULL) {
+		pr_debug("Postpone %s\n", mi->mountpoint);
+		return 1;
+	}
+
+	snprintf(rpath, sizeof(rpath), "%s%s", mi->bind->mountpoint, mi->root);
+
+	pr_info("Bind %s to %s\n", rpath, mi->mountpoint);
+
+	if (mount(rpath, mi->mountpoint, NULL,
+				MS_BIND, NULL) < 0) {
+		pr_perror("Can't mount at %s", mi->mountpoint);
+		return -1;
+	}
+
+	if (propogate_mount(mi))
+		return -1;
+
+	return 0;
 }
 
 static int do_mount_one(struct mount_info *mi)
@@ -690,7 +718,7 @@ static int do_mount_one(struct mount_info *mi)
 
 	pr_debug("\tMounting %s @%s\n", mi->fstype->name, mi->mountpoint);
 
-	if (fsroot_mounted(mi))
+	if (!mi->bind)
 		return do_new_mount(mi);
 	else
 		return do_bind_mount(mi);
