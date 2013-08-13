@@ -187,6 +187,24 @@ done:
 	}
 	mkdir(MPTS_ROOT"/dev/slave/test.mnt.slave/test.slave", 0600);
 
+#ifdef OVERMOUNT
+	mkdir(MPTS_ROOT"/dev/test_overmnt", 0600);
+	mkdir(MPTS_ROOT"/dev/test_overmnt/xxx", 0600);
+	mkdir(MPTS_ROOT"/dev/test_overmnt/yyy", 0600);
+	mkdir(MPTS_ROOT"/dev/test_overmnt/yyy/yyy", 0600);
+	if (mount("none", MPTS_ROOT"/dev/test_overmnt/xxx", "tmpfs", 0, "") < 0) {
+		fail("Can't mount tmpfs");
+		return 1;
+	}
+	if (mount(MPTS_ROOT"/dev/test_overmnt/xxx", MPTS_ROOT"/dev/test_overmnt/yyy/yyy", NULL, MS_BIND, "") < 0) {
+		fail("Can't mount tmpfs");
+		return 1;
+	}
+	if (mount(MPTS_ROOT"/dev/test_overmnt/xxx", MPTS_ROOT"/dev/test_overmnt/yyy", NULL, MS_BIND, "") < 0) {
+		fail("Can't mount tmpfs");
+		return 1;
+	}
+#endif
 
 	if (mount("none", MPTS_ROOT"/kernel", "proc", 0, "") < 0) {
 		fail("Can't mount proc");
