@@ -1486,6 +1486,9 @@ static int restore_root_task(struct pstree_item *init)
 		return -1;
 	}
 
+	if (prctl(PR_SET_CHILD_SUBREAPER, 1))
+		pr_warn("Can't set the child subreaper attribute");
+
 	/*
 	 * FIXME -- currently we assume that all the tasks live
 	 * in the same set of namespaces. This is done to debug
@@ -1599,6 +1602,19 @@ out_kill:
 out:
 	__restore_switch_stage(CR_STATE_FAIL);
 	pr_err("Restoring FAILED.\n");
+	while (1) {
+		pid_t pid;
+		int status;
+
+		pid = wait(&status);
+		if (pid > 0) {
+			pr_info("The process %d exits with %d", pid, status);
+			continue;
+		}
+		if (pid < 0 && errno != ECHILD)
+			pr_perror("Unable to collect children");
+		break;
+	}
 	return 1;
 }
 
