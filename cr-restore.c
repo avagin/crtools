@@ -1400,6 +1400,12 @@ static int attach_to_tasks()
 				return -1;
 			}
 
+			if (ptrace(PTRACE_SETOPTIONS, pid, NULL, PTRACE_O_TRACESYSGOOD)) {
+				pr_perror("Unable to set PTRACE_SETOPTIONS for %d", pid);
+				return -1;
+			}
+
+
 			if (ptrace(PTRACE_SYSCALL, pid, NULL, NULL)) {
 				pr_perror("Unable to start %d", pid);
 				return -1;

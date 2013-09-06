@@ -843,6 +843,11 @@ static int parasite_fini_seized(struct parasite_ctl *ctl)
 		return -1;
 	}
 
+	if (ptrace(PTRACE_SETOPTIONS, pid, NULL, PTRACE_O_TRACESYSGOOD)) {
+		pr_perror("Unable to set PTRACE_SETOPTIONS for %d", pid);
+		return -1;
+	}
+
 	ret = ptrace(PTRACE_SYSCALL, pid, NULL, NULL);
 	if (ret) {
 		pr_perror("ptrace");
@@ -886,7 +891,7 @@ int parasite_stop_on_syscall(int tasks, const int sys_nr)
 			return -1;
 		}
 
-		if (!WIFSTOPPED(status) || WSTOPSIG(status) != SIGTRAP) {
+		if (!WIFSTOPPED(status) || WSTOPSIG(status) != (SIGTRAP | 0x80)) {
 			pr_err("Task is in unexpected state: %x\n", status);
 			return -1;
 		}
@@ -920,7 +925,7 @@ int parasite_stop_on_syscall(int tasks, const int sys_nr)
 				return -1;
 			}
 
-			if (!WIFSTOPPED(status) || WSTOPSIG(status) != SIGTRAP) {
+			if (!WIFSTOPPED(status) || WSTOPSIG(status) != (SIGTRAP | 0x80)) {
 				pr_err("Task is in unexpected state: %x\n", status);
 				return -1;
 			}
