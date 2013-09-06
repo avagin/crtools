@@ -1074,6 +1074,9 @@ int parasite_map_exchange(struct parasite_ctl *ctl, unsigned long size)
 
 	ctl->map_length = round_up(size, PAGE_SIZE);
 
+	pr_debug("%d: remote_map %p map_length %lx\n",
+			ctl->pid.real, ctl->remote_map, ctl->map_length);
+
 	fd = open_proc_rw(ctl->pid.real, "map_files/%p-%p",
 		 ctl->remote_map, ctl->remote_map + ctl->map_length);
 	if (fd < 0)
