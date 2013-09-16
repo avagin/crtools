@@ -21,7 +21,7 @@ $criu restore -j --tcp-established -D data/ -d -o restore.log -v4 || {
 	exit 1
 }
 
-nc -w 1 localhost 5925 | grep -am 1 RFB
+python test.py 127.0.0.1 5925
 ret=$?
 
 kill $pid
