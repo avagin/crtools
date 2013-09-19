@@ -557,6 +557,7 @@ EOF
 			setsid $CRIU restore --file-locks --tcp-established -x -D $ddump -o restore.log -v4 -d $args || return 2
 			[ -n "$PIDNS" ] && PID=`cat $TPID`
 			cat /proc/$PID/mountinfo > $ddump/restore.mountinfo
+
 			[ `cat $ddump/restore.mountinfo | wc -l` -ne `cat $ddump/dump.mountinfo | wc -l` ] && return 2
 			for i in `seq 5`; do
 				save_fds $PID  $ddump/restore.fd
