@@ -1416,6 +1416,9 @@ static void finalize_restore(int status)
 		if (item->state == TASK_STOPPED)
 			kill(item->pid.real, SIGSTOP);
 detach:
+#ifdef CR_DEBUG
+		BUG_ON(status < 0);
+#endif
 		for (i = 0; i < item->nr_threads; i++) {
 			pid = item->threads[i].real;
 			if (pid < 0) {
@@ -1423,8 +1426,12 @@ detach:
 				break;
 			}
 
-			if (ptrace(PTRACE_DETACH, pid, NULL, 0))
+			if (ptrace(PTRACE_DETACH, pid, NULL, 0)) {
 				pr_perror("Unable to execute %d", pid);
+#ifdef CR_DEBUG
+				BUG();
+#endif
+			}
 		}
 	}
 }
