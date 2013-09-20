@@ -239,6 +239,8 @@ void print_on_level(unsigned int loglevel, const char *format, ...)
 			else
 				print_num(va_arg(args, int), &b);
 			break;
+		case 'p':
+			along = 1;
 		case 'x':
 			if (along)
 				print_hex_l(va_arg(args, long), &b);
