@@ -1189,6 +1189,9 @@ static int restore_task_with_children(void *_arg)
 
 	current = ca->item;
 
+	if ( !(ca->clone_flags & CLONE_FILES))
+		close_safe(&ca->fd);
+
 	if (current != root_item) {
 		char buf[PATH_MAX];
 		int fd;
@@ -1210,13 +1213,15 @@ static int restore_task_with_children(void *_arg)
 				current->pid.real, current->pid.virt);
 	}
 
-	if ( !(ca->clone_flags & CLONE_FILES))
-		close_safe(&ca->fd);
-
 	if (current->state != TASK_HELPER) {
 		ret = clone_service_fd(current->rst->service_fd_id);
 		if (ret)
 			exit(1);
+
+		if ((!(ca->clone_flags & CLONE_FILES)) &&
+		    current->parent &&
+		    current->parent->rst->fdt)
+			close_old_servie_fd(current->parent->rst->fdt->nr);
 	}
 
 	pid = getpid();
@@ -1231,6 +1236,10 @@ static int restore_task_with_children(void *_arg)
 
 	/* Restore root task */
 	if (current->parent == NULL) {
+		ret = close_old_fds(current);
+		if (ret)
+			exit(1);
+
 		if (collect_mount_info(getpid()))
 			exit(1);
 

@@ -71,6 +71,7 @@ enum sfd_type {
 #define CR_PARENT_LINK	"parent"
 
 extern int clone_service_fd(int id);
+void close_old_servie_fd(int nr);
 extern int init_service_fd(void);
 extern int get_service_fd(enum sfd_type type);
 extern int reserve_service_fd(enum sfd_type type);

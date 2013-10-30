@@ -330,6 +330,18 @@ int close_service_fd(enum sfd_type type)
 	return 0;
 }
 
+void close_old_servie_fd(int nr)
+{
+	int level, i;
+	for (level = 0; level < nr; level++) {
+		if (level == service_fd_id)
+			continue;
+		for (i = SERVICE_FD_MIN + 1; i < SERVICE_FD_MAX; i++) {
+			close(__get_service_fd(i, level));
+		}
+	}
+}
+
 int clone_service_fd(int id)
 {
 	int ret = -1, i;
