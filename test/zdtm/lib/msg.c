@@ -1,7 +1,9 @@
+#define _GNU_SOURCE
 #include <stdarg.h>
 #include <errno.h>
 #include <unistd.h>
 #include <fcntl.h>
+#include <linux/falloc.h>
 #include <sys/stat.h>
 #include <sys/user.h>
 #include <string.h>
@@ -22,6 +24,8 @@ int test_log_init(const char *fname, const char *suffix)
 		err("Can't open file %s", fname);
 		return -1;
 	}
+
+	fallocate(logfd, FALLOC_FL_KEEP_SIZE, 0, PAGE_SIZE);
 
 	dup2(logfd, STDERR_FILENO);
 	dup2(logfd, STDOUT_FILENO);
