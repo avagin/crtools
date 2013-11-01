@@ -1429,6 +1429,7 @@ detach:
 	}
 }
 
+/* This function returns pid of the root task in success case. */
 static int restore_root_task(struct pstree_item *init)
 {
 	int ret, fd;
@@ -1575,7 +1576,7 @@ out_kill:
 out:
 	__restore_switch_stage(CR_STATE_FAIL);
 	pr_err("Restoring FAILED.\n");
-	return 1;
+	return -1;
 }
 
 static int prepare_task_entries()
@@ -1622,7 +1623,10 @@ int cr_restore_tasks(void)
 	if (crtools_prepare_shared() < 0)
 		return -1;
 
-	return restore_root_task(root_item);
+	if (restore_root_task(root_item))
+		return -1;
+
+	return root_item->pid.real;
 }
 
 /*

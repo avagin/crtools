@@ -16,7 +16,6 @@
 #include "crtools.h"
 #include "util-pie.h"
 #include "log.h"
-#include "pstree.h"
 #include "cr-service.h"
 
 unsigned int service_sk_ino = -1;
@@ -190,6 +189,7 @@ exit:
 
 static int restore_using_req(int sk, CriuOpts *req)
 {
+	int pid;
 	bool success = false;
 
 	/*
@@ -205,16 +205,17 @@ static int restore_using_req(int sk, CriuOpts *req)
 		goto exit;
 	}
 
-	if (cr_restore_tasks())
+	pid = cr_restore_tasks();
+	if (pid < 0)
 		goto exit;
 
 	success = true;
-exit:
-	if (send_criu_restore_resp(sk, success, root_item->pid.real) == -1) {
+	if (send_criu_restore_resp(sk, success, pid) == -1) {
 		pr_perror("Can't send response");
 		success = false;
 	}
 
+exit:
 	return success ? 0 : 1;
 }
 
