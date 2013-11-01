@@ -15,6 +15,7 @@
 #include "asm/restorer.h"
 
 #include "posix-timer.h"
+#include "shmem.h"
 #include "vdso.h"
 
 #include <time.h>
@@ -143,8 +144,6 @@ struct task_restore_core_args {
 	unsigned long			vdso_rt_parked_at;	/* safe place to keep vdso */
 } __aligned(sizeof(long));
 
-#define SHMEMS_SIZE	4096
-
 #define RESTORE_ALIGN_STACK(start, size)	\
 	(ALIGN((start) + (size) - sizeof(long), sizeof(long)))
 
@@ -152,28 +151,6 @@ static inline unsigned long restorer_stack(struct thread_restore_args *a)
 {
 	return RESTORE_ALIGN_STACK((long)a->mem_zone.stack, RESTORE_STACK_SIZE);
 }
-
-/*
- * pid is a pid of a creater
- * start, end are used for open mapping
- * fd is a file discriptor, which is valid for creater,
- * it's opened in cr-restor, because pgoff may be non zero
- */
-
-struct shmem_info {
-	unsigned long	shmid;
-	unsigned long	start;
-	unsigned long	end;
-	unsigned long	size;
-	int		pid;
-	int		fd;
-	futex_t		lock;
-};
-
-struct shmems {
-	int			nr_shmems;
-	struct shmem_info	entries[0];
-};
 
 #define TASK_ENTRIES_SIZE 4096
 
@@ -199,21 +176,6 @@ struct task_entries {
 	futex_t start;
 	mutex_t	zombie_lock;
 };
-
-static always_inline struct shmem_info *
-find_shmem(struct shmems *shmems, unsigned long shmid)
-{
-	struct shmem_info *si;
-	int i;
-
-	for (i = 0; i < shmems->nr_shmems; i++) {
-		si = &shmems->entries[i];
-		if (si->shmid == shmid)
-			return si;
-	}
-
-	return NULL;
-}
 
 #define restore_finish_stage(__stage) ({				\
 		futex_dec_and_wake(&task_entries->nr_in_progress);	\
