@@ -138,6 +138,15 @@ struct vma_area {
 
 #define vma_area_is(vma_area, s)	vma_entry_is(&((vma_area)->vma), s)
 #define vma_area_len(vma_area)		vma_entry_len(&((vma_area)->vma))
+#define vma_premmaped_start(vma)	((vma)->shmid)
+#define vma_entry_is(vma, s)		(((vma)->status & (s)) == (s))
+#define vma_entry_len(vma)		((vma)->end - (vma)->start)
+
+static inline int in_vma_area(struct vma_area *vma, unsigned long addr)
+{
+	return addr >= (unsigned long)vma->vma.start &&
+		addr < (unsigned long)vma->vma.end;
+}
 
 struct fdt {
 	int			nr;		/* How many tasks share this fd table */
@@ -170,12 +179,6 @@ struct rst_info {
 		futex_t			pgrp_set;
 	};
 };
-
-static inline int in_vma_area(struct vma_area *vma, unsigned long addr)
-{
-	return addr >= (unsigned long)vma->vma.start &&
-		addr < (unsigned long)vma->vma.end;
-}
 
 /*
  * When we have to restore a shared resource, we mush select which
