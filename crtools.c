@@ -20,6 +20,7 @@
 
 #include "compiler.h"
 #include "crtools.h"
+#include "servicefd.h"
 #include "sockets.h"
 #include "syscall.h"
 #include "files.h"

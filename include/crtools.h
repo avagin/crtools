@@ -9,7 +9,6 @@
 #include "util.h"
 #include "lock.h"
 #include "cr-show.h"
-#include "servicefd.h"
 
 #include "protobuf/vma.pb-c.h"
 
