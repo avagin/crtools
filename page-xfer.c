@@ -3,6 +3,7 @@
 #include <arpa/inet.h>
 #include <unistd.h>
 
+#include "image.h"
 #include "crtools.h"
 #include "page-xfer.h"
 #include "page-pipe.h"

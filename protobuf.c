@@ -13,6 +13,7 @@
 #include "asm/types.h"
 #include "log.h"
 #include "util.h"
+#include "image.h"
 #include "string.h"
 #include "sockets.h"
 

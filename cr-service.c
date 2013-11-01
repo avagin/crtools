@@ -15,6 +15,7 @@
 
 #include "crtools.h"
 #include "util-pie.h"
+#include "image.h"
 #include "log.h"
 #include "cr-service.h"
 

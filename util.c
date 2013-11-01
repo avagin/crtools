@@ -35,6 +35,7 @@
 #include "asm/types.h"
 #include "list.h"
 #include "util.h"
+#include "image.h"
 
 #include "crtools.h"
 #include "servicefd.h"

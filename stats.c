@@ -1,8 +1,11 @@
 #include <unistd.h>
 #include <sys/time.h>
+
+#include "asm/atomic.h"
 #include "protobuf.h"
 #include "stats.h"
-#include "crtools.h"
+#include "image.h"
+#include "servicefd.h"
 #include "protobuf/stats.pb-c.h"
 
 struct timing {

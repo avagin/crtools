@@ -3,7 +3,8 @@
 
 #include "list.h"
 #include "types.h"
-#include "crtools.h"
+#include "image.h"
+#include "lock.h"
 #include "protobuf/core.pb-c.h"
 
 /*
@@ -11,6 +12,28 @@
  * all orphaned children in the system.
  */
 #define INIT_PID	(1)
+
+struct rst_info {
+	struct list_head	fds;
+	struct list_head	eventpoll;
+	struct list_head	tty_slaves;
+
+	void			*premmapped_addr;
+	unsigned long		premmapped_len;
+	unsigned long		clone_flags;
+
+	void			*munmap_restorer;
+
+	int			nr_zombies;
+
+	int service_fd_id;
+	struct fdt		*fdt;
+
+	union {
+		struct pstree_item	*pgrp_leader;
+		futex_t			pgrp_set;
+	};
+};
 
 struct pstree_item {
 	struct pstree_item	*parent;

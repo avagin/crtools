@@ -16,7 +16,7 @@
 #include "asm/types.h"
 #include "eventpoll.h"
 #include "proc_parse.h"
-#include "crtools.h"
+#include "pstree.h"
 #include "image.h"
 #include "util.h"
 #include "log.h"
