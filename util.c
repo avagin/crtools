@@ -37,6 +37,7 @@
 #include "util.h"
 
 #include "crtools.h"
+#include "servicefd.h"
 
 #define VMA_OPT_LEN	128
 
