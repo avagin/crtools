@@ -2,7 +2,7 @@
 #define __CR_PSTREE_H__
 
 #include "list.h"
-#include "types.h"
+#include "common.h"
 #include "image.h"
 #include "lock.h"
 #include "protobuf/core.pb-c.h"

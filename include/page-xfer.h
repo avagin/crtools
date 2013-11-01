@@ -25,6 +25,8 @@ struct page_xfer {
 	};
 };
 
+void up_page_ids_base(void);
+
 int open_page_xfer(struct page_xfer *xfer, int fd_type, long id);
 struct page_pipe;
 int page_xfer_dump_pages(struct page_xfer *, struct page_pipe *,

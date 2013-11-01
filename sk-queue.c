@@ -13,7 +13,7 @@
 #include "asm/types.h"
 #include "list.h"
 #include "image.h"
-#include "crtools.h"
+#include "common.h"
 #include "util.h"
 #include "util-pie.h"
 #include "sockets.h"

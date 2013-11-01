@@ -4,7 +4,7 @@
 
 #include "shmem.h"
 #include "image.h"
-#include "crtools.h"
+#include "common.h"
 #include "page-pipe.h"
 #include "page-xfer.h"
 #include "vma.h"

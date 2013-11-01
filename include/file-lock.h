@@ -1,7 +1,7 @@
 #ifndef __FILE_LOCK_H__
 #define __FILE_LOCK_H__
 
-#include "crtools.h"
+#include "common.h"
 #include "protobuf.h"
 #include "protobuf/file-lock.pb-c.h"
 

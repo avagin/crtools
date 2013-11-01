@@ -14,6 +14,7 @@
 #include <sys/stat.h>
 
 #include "crtools.h"
+#include "common.h"
 #include "util-pie.h"
 #include "image.h"
 #include "log.h"

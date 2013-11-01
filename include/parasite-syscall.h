@@ -1,7 +1,7 @@
 #ifndef __CR_PARASITE_SYSCALL_H__
 #define __CR_PARASITE_SYSCALL_H__
 
-#include "types.h"
+#include "common.h"
 #include "list.h"
 
 #define BUILTIN_SYSCALL_SIZE	8
