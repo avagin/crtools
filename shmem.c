@@ -7,6 +7,8 @@
 #include "crtools.h"
 #include "page-pipe.h"
 #include "page-xfer.h"
+#include "vma.h"
+
 #include "protobuf.h"
 #include "protobuf/pagemap.pb-c.h"
 

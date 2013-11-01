@@ -36,6 +36,7 @@
 #include "list.h"
 #include "util.h"
 #include "image.h"
+#include "vma.h"
 
 #include "crtools.h"
 #include "servicefd.h"
