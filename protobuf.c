@@ -8,14 +8,12 @@
 
 #include <google/protobuf-c/protobuf-c.h>
 
-#include "crtools.h"
 #include "compiler.h"
 #include "asm/types.h"
 #include "log.h"
 #include "util.h"
 #include "image.h"
 #include "string.h"
-#include "sockets.h"
 
 #include "protobuf.h"
 

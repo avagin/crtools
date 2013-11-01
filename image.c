@@ -1,6 +1,5 @@
 #include <unistd.h>
 #include <stdarg.h>
-#include "crtools.h"
 #include "image.h"
 #include "eventpoll.h"
 #include "signalfd.h"
@@ -236,6 +235,11 @@ err:
 	return -1;
 }
 
+void close_image_dir(void)
+{
+	close_service_fd(IMG_FD_OFF);
+}
+
 int open_image_dir(void)
 {
 	int fd, ret;
@@ -273,11 +277,6 @@ int open_image_dir(void)
 err:
 	close_image_dir();
 	return -1;
-}
-
-void close_image_dir(void)
-{
-	close_service_fd(IMG_FD_OFF);
 }
 
 static unsigned long page_ids = 1;

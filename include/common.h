@@ -5,6 +5,9 @@
 
 #include "bug.h"
 #include "list.h"
+#include "lock.h"
+
+#define CR_FD_PERM		(S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH)
 
 struct pid {
 	/*
@@ -95,6 +98,16 @@ extern void init_opts(void);
 struct script {
 	struct list_head node;
 	char *path;
+};
+
+struct fdt {
+	int			nr;		/* How many tasks share this fd table */
+	pid_t			pid;		/* Who should restore this fd table */
+	/*
+	 * The fd table is ready for restoing, if fdt_lock is equal to nr
+	 * The fdt table was restrored, if fdt_lock is equal to nr + 1
+	 */
+	futex_t			fdt_lock;
 };
 
 #endif

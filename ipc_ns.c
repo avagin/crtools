@@ -8,7 +8,6 @@
 #include <sys/shm.h>
 
 #include "util.h"
-#include "crtools.h"
 #include "syscall.h"
 #include "namespaces.h"
 #include "sysctl.h"

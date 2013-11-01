@@ -12,7 +12,6 @@
 #include "namespaces.h"
 #include "net.h"
 #include "libnetlink.h"
-#include "crtools.h"
 #include "sk-inet.h"
 #include "tun.h"
 #include "util-pie.h"

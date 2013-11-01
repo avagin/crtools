@@ -3,7 +3,6 @@
 #include <linux/rtnetlink.h>
 #include <poll.h>
 
-#include "crtools.h"
 #include "files.h"
 #include "sockets.h"
 #include "util.h"

@@ -11,7 +11,6 @@
 
 #include "asm/types.h"
 #include "libnetlink.h"
-#include "crtools.h"
 #include "inet_diag.h"
 #include "files.h"
 #include "image.h"

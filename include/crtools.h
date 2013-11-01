@@ -12,8 +12,6 @@
 
 #include "protobuf/vma.pb-c.h"
 
-#define CR_FD_PERM		(S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH)
-
 int check_img_inventory(void);
 int write_img_inventory(void);
 void kill_inventory(void);
@@ -30,16 +28,6 @@ int cr_show(int pid);
 int convert_to_elf(char *elf_path, int fd_core);
 int cr_check(void);
 int cr_exec(int pid, char **opts);
-
-struct fdt {
-	int			nr;		/* How many tasks share this fd table */
-	pid_t			pid;		/* Who should restore this fd table */
-	/*
-	 * The fd table is ready for restoing, if fdt_lock is equal to nr
-	 * The fdt table was restrored, if fdt_lock is equal to nr + 1
-	 */
-	futex_t			fdt_lock;
-};
 
 void restrict_uid(unsigned int uid, unsigned int gid);
 struct proc_status_creds;

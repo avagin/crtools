@@ -9,6 +9,7 @@
 #include "mount.h"
 #include "pstree.h"
 #include "namespaces.h"
+#include "cr-show.h"
 #include "net.h"
 
 #include "protobuf.h"

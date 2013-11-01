@@ -12,7 +12,6 @@
 #include <sys/types.h>
 #include <sys/wait.h>
 
-#include "crtools.h"
 #include "asm/types.h"
 #include "util.h"
 #include "util-pie.h"

@@ -17,7 +17,7 @@
 
 #include "syscall.h"
 #include "files.h"
-#include "crtools.h"
+#include "common.h"
 #include "servicefd.h"
 #include "image.h"
 #include "util.h"
