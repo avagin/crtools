@@ -1266,6 +1266,9 @@ static int restore_task_with_children(void *_arg)
 		if (restore_finish_stage(CR_STATE_RESTORE_NS) < 0)
 			exit(1);
 
+		if (close_old_fds(current))
+			exit(1);
+
 		if (collect_mount_info(getpid()))
 			exit(1);
 
@@ -1300,11 +1303,9 @@ static int restore_task_with_children(void *_arg)
 	if (prepare_mappings(pid))
 		exit(1);
 
-	if (!(ca->clone_flags & CLONE_FILES)) {
-		ret = close_old_fds(current);
-		if (ret)
-			exit(1);
-	}
+	if ((!(ca->clone_flags & CLONE_FILES)) &&
+	    current->parent && current->parent->rst->fdt)
+		close_old_servie_fd(current->parent->rst->fdt->nr);
 
 	if (create_children_and_session())
 		exit(1);
