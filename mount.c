@@ -237,7 +237,11 @@ static struct mount_info *mnt_build_ids_tree(struct mount_info *list)
 			pr_err("Mountpoint %d w/o parent %d found @%s (root %s)\n",
 					m->mnt_id, m->parent_mnt_id, m->mountpoint,
 					root ? "found" : "not found");
-			return NULL;
+			if (root && m->is_root) {
+				/* root of a sub mount namespace*/
+				p = root;
+			} else
+				return NULL;
 		}
 
 		m->parent = p;
