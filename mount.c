@@ -225,7 +225,7 @@ static struct mount_info *mnt_build_ids_tree(struct mount_info *list)
 	for (m = list; m != NULL; m = m->next) {
 		struct mount_info *p;
 
-		pr_debug("\t\tWorking on %d->%d\n", m->mnt_id, m->parent_mnt_id);
+		pr_debug("\t\tWorking on %d->%d %s\n", m->mnt_id, m->parent_mnt_id, m->mountpoint);
 		p = __lookup_mnt_id(list, m->parent_mnt_id);
 		if (!p) {
 			/* This should be / */
@@ -781,6 +781,7 @@ int dump_mnt_ns(int ns_pid, int ns_id)
 	struct mount_info *pm;
 	int img_fd, ret = -1;
 
+	pr_debug("Dumping mount namespace %d\n", ns_id);
 	img_fd = open_image(CR_FD_MNTS, O_DUMP, ns_id);
 	if (img_fd < 0)
 		return -1;
