@@ -1385,6 +1385,9 @@ static int dump_one_task(struct pstree_item *item)
 		 */
 		return 0;
 
+	if (mntns_collect_root(item->pid.real))
+		return -1;
+
 	dfds = xmalloc(sizeof(*dfds));
 	if (!dfds)
 		goto err_free;

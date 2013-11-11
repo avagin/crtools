@@ -1312,7 +1312,7 @@ static int cr_pivot_root(char *root, struct mount_info *mis)
 	 * to let them bind-mount whatever is necessary into
 	 * the new tree (see comment in premount_one.
 	 */
-	if (premount_external(mis, put_root))
+	if (mis && premount_external(mis, put_root))
 		return -1;
 
 	if (mount("none", put_root, "none", MS_REC|MS_PRIVATE, NULL)) {
@@ -1373,17 +1373,15 @@ static void free_mounts(void)
 	}
 }
 
-static struct mount_info *read_mnt_ns_img(int ns_pid)
+static char mnt_roots[] = "/.criu.mntns.XXXXXX";
+static int collect_mnt_from_image(struct mount_info **pms, struct ns_id *nsid)
 {
 	MntEntry *me = NULL;
 	int img, ret;
-	struct mount_info *pms = NULL;
 
-	pr_info("Populating mount namespace\n");
-
-	img = open_image(CR_FD_MNTS, O_RSTR, ns_pid);
+	img = open_image(CR_FD_MNTS, O_RSTR, nsid->id);
 	if (img < 0)
-		return NULL;
+		return -1;
 
 	pr_debug("Reading mountpoint images\n");
 
@@ -1398,8 +1396,8 @@ static struct mount_info *read_mnt_ns_img(int ns_pid)
 		if (!pm)
 			goto err;
 
-		pm->next = pms;
-		pms = pm;
+		pm->next = *pms;
+		*pms = pm;
 
 		pm->mnt_id		= me->mnt_id;
 		pm->parent_mnt_id	= me->parent_mnt_id;
@@ -1418,10 +1416,25 @@ static struct mount_info *read_mnt_ns_img(int ns_pid)
 		if (!pm->root)
 			goto err;
 
-		pr_debug("\t\tGetting mpt for %d\n", pm->mnt_id);
-		pm->mountpoint = xstrdup(me->mountpoint);
-		if (!pm->mountpoint)
-			goto err;
+		if (nsid->id == root_item->ids->mnt_ns_id) {
+			pm->mountpoint = xstrdup(me->mountpoint);
+			if (!pm->mountpoint)
+				goto err;
+		} else {
+			int len;
+
+			len = snprintf(NULL, 0, "%s/%d%s",
+					mnt_roots, nsid->id, me->mountpoint);
+
+			pm->mountpoint = xmalloc(len + 1);
+			if (pm->mountpoint == NULL)
+				goto err;
+
+			snprintf(pm->mountpoint, len + 1,
+					"%s/%d%s", mnt_roots, nsid->id, me->mountpoint);
+		}
+
+		pr_debug("\t\tGetting mpt for %d %s\n", pm->mnt_id, pm->mountpoint);
 
 		pr_debug("\t\tGetting source for %d\n", pm->mnt_id);
 		pm->source = xstrdup(me->source);
@@ -1440,34 +1453,153 @@ static struct mount_info *read_mnt_ns_img(int ns_pid)
 		mnt_entry__free_unpacked(me, NULL);
 
 	close(img);
-	return pms;
 
+	return 0;
+err:
+	close_safe(&img);
+	return -1;
+}
+
+static struct mount_info *read_mnt_ns_img()
+{
+	struct mount_info *pms = NULL;
+	struct ns_id *nsid;
+
+	if (chdir(opts.root ? : "/")) {
+		pr_perror("Unable to change working directory on %s", opts.root);
+		return NULL;
+	}
+
+	if (mkdtemp(mnt_roots + 1) == NULL) {
+		pr_perror("Unable to create a temporary directory");
+		return NULL;
+	}
+
+	nsid = ns_ids;
+	while (nsid) {
+		if (nsid->nd != &mnt_ns_desc) {
+			nsid = nsid->next;
+			continue;
+		}
+
+		if (collect_mnt_from_image(&pms, nsid))
+			return NULL;
+
+		nsid = nsid->next;
+	}
+	return pms;
+}
+
+int restore_task_mnt_ns(struct ns_id *nsid, pid_t pid)
+{
+	char path[PATH_MAX];
+
+	if (root_item->ids->mnt_ns_id == nsid->id)
+		return 0;
+
+	if (nsid->pid != getpid()) {
+		int fd;
+
+		futex_wait_while_eq(&nsid->created, 0);
+		fd = open_proc(nsid->pid, "ns/mnt");
+		if (fd < 0)
+			return -1;
+
+		if (setns(fd, CLONE_NEWNS)) {
+			pr_perror("Unable to change mount namespace");
+			return -1;
+		}
+		return 0;
+	}
+
+	if (unshare(CLONE_NEWNS)) {
+		pr_perror("Unable to unshare mount namespace");
+		return -1;
+	}
+
+	snprintf(path, sizeof(path), "%s/%d/", mnt_roots, nsid->id);
+
+	if (cr_pivot_root(path, NULL))
+		return -1;
+
+	futex_set_and_wake(&nsid->created, 1);
+
+	return 0;
+}
+
+static int prepare_temporary_roots()
+{
+	char path[PATH_MAX];
+	struct ns_id *nsid;
+
+	if (mount("none", mnt_roots, "tmpfs", 0, NULL)) {
+		pr_perror("Unable to mount tmpfs in %s", mnt_roots);
+		return -1;
+	}
+	if (mount("none", mnt_roots, NULL, MS_PRIVATE, NULL))
+		return -1;
+
+	nsid = ns_ids;
+	while (nsid) {
+		if (nsid->nd != &mnt_ns_desc) {
+			nsid = nsid->next;
+			continue;
+		}
+
+		snprintf(path, sizeof(path), "%s/%d",
+				mnt_roots, nsid->id);
+
+		if (mkdir(path, 0600)) {
+			pr_perror("Unable to create %s", path);
+			return -1;
+		}
+		nsid = nsid->next;
+	}
+
+	return 0;
+}
+
+static int populate_mnt_ns(struct mount_info *pms)
+{
+
+	if (prepare_temporary_roots())
+		return -1;
+
+	pr_info("Populating mount namespace\n");
+	pms = mnt_build_tree(pms);
+	if (!pms)
+		return -1;
+
+	if (validate_mounts(pms, true)) //FIXME
+		return -1;
+
+	if (mnt_tree_for_each(pms, do_mount_one))
+		goto err;
+
+	return 0;
 err:
 	while (pms) {
 		struct mount_info *pm = pms;
 		pms = pm->next;
 		mnt_entry_free(pm);
 	}
-	close_safe(&img);
-	return NULL;
+	return -1;
 }
 
-static int populate_mnt_ns(int ns_pid, struct mount_info *mis)
+int fini_mnt_ns()
 {
-	struct mount_info *pms;
+	if (!(current_ns_mask & CLONE_NEWNS))
+		return 0;
 
-	mntinfo_tree = NULL;
-	mntinfo = mis;
-
-	pms = mnt_build_tree(mntinfo);
-	if (!pms)
+	if (mount("none", mnt_roots, "none", MS_REC|MS_PRIVATE, NULL)) {
+		pr_perror("Can't remount root with MS_PRIVATE");
 		return -1;
+	}
 
-	if (validate_mounts(pms, false))
-		return -1;
+	umount2(mnt_roots, MNT_DETACH);
+	rmdir(mnt_roots);
 
-	mntinfo_tree = pms;
-	return mnt_tree_for_each(pms, do_mount_one);
+	return 0;
 }
 
 int prepare_mnt_ns(int ns_pid)
@@ -1502,7 +1634,7 @@ int prepare_mnt_ns(int ns_pid)
 	free_mounts();
 
 	if (!ret)
-		ret = populate_mnt_ns(ns_pid, mis);
+		ret = populate_mnt_ns(mis);
 out:
 	return ret;
 }

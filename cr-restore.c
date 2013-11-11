@@ -1310,6 +1310,18 @@ static int restore_task_with_children(void *_arg)
 	if (create_children_and_session())
 		exit(1);
 
+	if (current->ids && current->ids->has_mnt_ns_id) {
+		struct ns_id *nsid;
+
+		nsid = lookup_ns_by_id(current->ids->mnt_ns_id);
+		if (nsid == NULL) {
+			pr_err("Can't find mount namespace %d\n", current->ids->mnt_ns_id);
+			exit(1);
+		}
+		if (restore_task_mnt_ns(nsid, current->pid.real))
+			exit(1);
+	}
+
 	if (unmap_guard_pages())
 		exit(1);
 
@@ -1317,6 +1329,11 @@ static int restore_task_with_children(void *_arg)
 
 	if (restore_finish_stage(CR_STATE_FORKING) < 0)
 		exit(1);
+
+	if (current->parent == NULL) {
+		if (fini_mnt_ns())
+			exit (1);
+	}
 
 	if (current->state == TASK_HELPER)
 		return 0;
