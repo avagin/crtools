@@ -786,6 +786,9 @@ int dump_mnt_ns(int ns_pid, int ns_id)
 	if (img_fd < 0)
 		return -1;
 
+	if (mntns_collect_root(ns_pid))
+		return -1;
+
 	pm = parse_mountinfo(ns_pid);
 	if (!pm) {
 		pr_err("Can't parse %d's mountinfo\n", ns_pid);
