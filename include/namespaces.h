@@ -42,6 +42,8 @@ extern int switch_ns(int pid, struct ns_desc *nd, int *rst);
 extern int restore_ns(int rst, struct ns_desc *nd);
 
 extern int dump_task_ns_ids(struct pstree_item *);
+extern int add_ns_id(unsigned int id, pid_t pid, struct ns_desc *nd);
+
 extern int gen_predump_ns_mask(void);
 
 #endif /* __CR_NS_H__ */
