@@ -156,6 +156,17 @@ static unsigned int lookup_ns_id(unsigned int kid, struct ns_desc *nd)
 	return 0;
 }
 
+struct ns_id *lookup_ns_by_id(unsigned int id)
+{
+	struct ns_id *nsid;
+
+	for (nsid = ns_ids; nsid != NULL; nsid = nsid->next)
+		if (nsid->id == id)
+			return nsid;
+
+	return NULL;
+}
+
 static unsigned int generate_ns_id(int pid, unsigned int kid, struct ns_desc *nd)
 {
 	unsigned int id;
