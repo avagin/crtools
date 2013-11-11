@@ -643,7 +643,7 @@ set_mask:
 		if (item == root_item) {
 			pr_info("Will restore in %lx namespaces\n", cflags);
 			current_ns_mask = cflags & CLONE_ALLNS;
-		} else if (cflags & CLONE_ALLNS) {
+		} else if (cflags & (CLONE_ALLNS & ~CLONE_NEWNS)) {
 			pr_err("Can't restore sub-task in NS\n");
 			return -1;
 		}
