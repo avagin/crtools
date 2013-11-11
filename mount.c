@@ -998,6 +998,10 @@ static int propagate_mount(struct mount_info *mi)
 	struct mount_info *t;
 
 	propagate_siblings(mi);
+
+	if (mi->parent == NULL)
+		goto skip;
+
 	umount_from_slaves(mi);
 
 	/* Propagate this mount to everyone from a parent group */
@@ -1015,6 +1019,7 @@ static int propagate_mount(struct mount_info *mi)
 		}
 	}
 
+skip:
 	/*
 	 * FIXME Currently non-root mounts can be restored
 	 * only if a proper root mount exists
