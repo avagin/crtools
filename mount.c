@@ -242,6 +242,12 @@ static struct mount_info *mnt_build_ids_tree(struct mount_info *list)
 					m->mnt_id, m->parent_mnt_id, m->mountpoint,
 					root ? "found" : "not found");
 			if (root && m->is_root) {
+				if (!mounts_equal(root, m, true) ||
+					(strcmp(root->root, m->root))) {
+					pr_err("Nested mount namespaces with different roots are not supported yet");
+					return NULL;
+				}
+
 				/*
 				 * A root of a sub mount namespace is
 				 * mounted in a temporary directory in the
@@ -1079,9 +1085,10 @@ static int propagate_mount(struct mount_info *mi)
 skip_parent:
 	/*
 	 * FIXME Currently non-root mounts can be restored
-	 * only if a proper root mount exists
+	 * only if a proper root mount exists.
+	 * Here is one exception for sub-roots. Roots of all mntns are the same.
 	 */
-	if (fsroot_mounted(mi))
+	if (mi->parent == NULL || fsroot_mounted(mi))
 		list_for_each_entry(t, &mi->mnt_bind, mnt_bind) {
 			if (t->bind)
 				continue;
