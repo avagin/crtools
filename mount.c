@@ -238,6 +238,12 @@ static struct mount_info *mnt_build_ids_tree(struct mount_info *list)
 					m->mnt_id, m->parent_mnt_id, m->mountpoint,
 					root ? "found" : "not found");
 			if (root && m->is_root) {
+				if (!mounts_equal(root, m, true) ||
+					(strcmp(root->root, m->root))) {
+					pr_err("Nested mount namespaces with different roots are not supported yet");
+					return NULL;
+				}
+
 				/* root of a sub mount namespace*/
 				p = root;
 			} else
@@ -1032,9 +1038,10 @@ static int propagate_mount(struct mount_info *mi)
 skip:
 	/*
 	 * FIXME Currently non-root mounts can be restored
-	 * only if a proper root mount exists
+	 * only if a proper root mount exists.
+	 * Here is one exception for sub-roots. Roots of all mntns are the same.
 	 */
-	if (fsroot_mounted(mi))
+	if (mi->parent == NULL || fsroot_mounted(mi))
 		list_for_each_entry(t, &mi->mnt_bind, mnt_bind) {
 			if (t->bind)
 				continue;
@@ -1180,8 +1187,11 @@ static int do_mount_one(struct mount_info *mi)
 {
 	int ret;
 
-	if (!mi->parent)
-		return 0;
+	if (!mi->parent) {
+		mi->mounted = true;
+		ret = restore_shared_options(mi, 0, mi->shared_id, 0);
+		goto propagate;
+	}
 
 	if (mi->mounted)
 		return 0;
@@ -1198,6 +1208,7 @@ static int do_mount_one(struct mount_info *mi)
 	else
 		ret = do_bind_mount(mi);
 
+propagate:
 	if (ret == 0 && propagate_mount(mi))
 		return -1;
 
