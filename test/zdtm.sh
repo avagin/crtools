@@ -99,6 +99,7 @@ static/stopped
 static/chroot
 static/chroot-file
 static/rtc
+static/socket-tcpbuf-local
 "
 # Duplicate list with ns/ prefix
 TEST_LIST=$TEST_LIST$(echo $TEST_LIST | tr ' ' '\n' | sed 's#^#ns/#')
@@ -112,7 +113,6 @@ static/socket-tcp6
 streaming/socket-tcp
 streaming/socket-tcp6
 static/socket-tcpbuf
-static/socket-tcpbuf-local
 static/socket-tcpbuf6
 static/pty03
 static/mountpoints
@@ -484,6 +484,11 @@ EOF
 
 		save_fds $PID  $ddump/dump.fd
 		save_maps $PID  $ddump/dump.maps
+
+		if [ -n "$PIDNS" ]; then
+			nsenter -n -t $PID -- iptables -I INPUT -j DROP || return 2
+		fi
+
 		setsid $CRIU_CPT dump $opts --file-locks --tcp-established $linkremap \
 			-x --evasive-devices -D $ddump -o dump.log -v4 -t $PID $args $ARGS $snapopt $postdump
 		retcode=$?
@@ -557,6 +562,10 @@ EOF
 			expr $tname : "static" > /dev/null && {
 				diff_maps $ddump/dump.maps $ddump/restore.maps || return 2
 			}
+		fi
+
+		if [ -n "$PIDNS" ]; then
+			nsenter -n -t $PID -- iptables -F || return 2
 		fi
 
 	done
