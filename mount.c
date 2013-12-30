@@ -1373,7 +1373,7 @@ static void free_mounts(void)
 	}
 }
 
-static char mnt_roots[] = "/.criu.mntns.XXXXXX";
+static char *mnt_roots = NULL;
 static int collect_mnt_from_image(struct mount_info **pms, struct ns_id *nsid)
 {
 	MntEntry *me = NULL;
@@ -1476,8 +1476,16 @@ static struct mount_info *read_mnt_ns_img()
 		return NULL;
 	}
 
+	mnt_roots = strdup("/.criu.mntns.XXXXXX");
+	if (mnt_roots == NULL) {
+		pr_perror("Can't allocate memory");
+		return NULL;
+	}
+
 	if (mkdtemp(mnt_roots + 1) == NULL) {
 		pr_perror("Unable to create a temporary directory");
+		xfree(mnt_roots);
+		mnt_roots = NULL;
 		return NULL;
 	}
 
@@ -1594,9 +1602,10 @@ err:
 
 int fini_mnt_ns()
 {
-	if (!(current_ns_mask & CLONE_NEWNS))
-		return 0;
+	if (mnt_roots == NULL)
+		return -1;
 
+	/*FIXME add a comment*/
 	if (mount("none", mnt_roots, "none", MS_REC|MS_PRIVATE, NULL)) {
 		pr_perror("Can't remount root with MS_PRIVATE");
 		return -1;
@@ -1636,6 +1645,12 @@ int prepare_mnt_ns(int ns_pid)
 		ret = cr_pivot_root(opts.root, mis);
 	} else
 		ret = clean_mnt_ns();
+
+	if (ret) {
+		rmdir(mnt_roots + 1);
+		xfree(mnt_roots);
+		mnt_roots = NULL;
+	}
 
 	free_mounts();
 
