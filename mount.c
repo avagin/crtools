@@ -73,9 +73,11 @@ int open_mount(unsigned int s_dev)
 {
 	struct mount_info *i;
 
-	for (i = mntinfo; i != NULL; i = i->next)
+	for (i = mntinfo; i != NULL; i = i->next) {
+		pr_err("%#x %#x\n", s_dev, i->s_dev);
 		if (s_dev == i->s_dev)
 			return open(i->mountpoint, O_RDONLY);
+	}
 
 	return -ENOENT;
 }
@@ -1573,31 +1575,25 @@ static int prepare_temporary_roots()
 	return 0;
 }
 
-static int populate_mnt_ns(struct mount_info *pms)
+static int populate_mnt_ns(struct mount_info *mis)
 {
+	struct mount_info *pms;
+
+	mntinfo_tree = NULL;
+	mntinfo = mis;
 
 	if (prepare_temporary_roots())
 		return -1;
 
-	pr_info("Populating mount namespace\n");
-	pms = mnt_build_tree(pms);
+	pms = mnt_build_tree(mntinfo);
 	if (!pms)
 		return -1;
 
-	if (validate_mounts(pms, true)) //FIXME
+	if (validate_mounts(pms, false))
 		return -1;
 
-	if (mnt_tree_for_each(pms, do_mount_one))
-		goto err;
-
-	return 0;
-err:
-	while (pms) {
-		struct mount_info *pm = pms;
-		pms = pm->next;
-		mnt_entry_free(pm);
-	}
-	return -1;
+	mntinfo_tree = pms;
+	return mnt_tree_for_each(pms, do_mount_one);
 }
 
 int fini_mnt_ns()
