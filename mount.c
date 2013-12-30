@@ -1423,6 +1423,12 @@ static int collect_mnt_from_image(struct mount_info **pms, struct ns_id *nsid)
 		} else {
 			int len;
 
+			/* All non-root mount namespaces are restored in
+			 * a separate temporary directory, then a process with
+			 * minimal pid will creates a new mount namespace and
+			 * changes the root filesystem (pivot_root).
+			 */
+
 			len = snprintf(NULL, 0, "%s/%d%s",
 					mnt_roots, nsid->id, me->mountpoint);
 
