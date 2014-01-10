@@ -1370,6 +1370,34 @@ static void free_mounts(void)
 	}
 }
 
+static char *get_mnt_roots(bool create)
+{
+	static char *mnt_roots = NULL;
+
+	if (!create || mnt_roots)
+		return mnt_roots;
+
+	if (chdir(opts.root ? : "/")) {
+		pr_perror("Unable to change working directory on %s", opts.root);
+		return NULL;
+	}
+
+	mnt_roots = strdup(".criu.mntns.XXXXXX");
+	if (mnt_roots == NULL) {
+		pr_perror("Can't allocate memory");
+		return NULL;
+	}
+
+	if (mkdtemp(mnt_roots) == NULL) {
+		pr_perror("Unable to create a temporary directory");
+		mnt_roots = NULL;
+		return NULL;
+	}
+
+	return mnt_roots;
+
+}
+
 static struct mount_info *read_mnt_ns_img(int ns_pid)
 {
 	MntEntry *me = NULL;
@@ -1460,12 +1488,54 @@ err:
 	return NULL;
 }
 
+/*
+ * All nested mount namespaces are restore as sub-trees of the root namespace.
+ */
+static int prepare_temporary_roots()
+{
+	char path[PATH_MAX];
+	struct ns_id *nsid;
+	char *mnt_roots = get_mnt_roots(false);
+
+	if (mnt_roots == NULL)
+		return 0;
+
+	if (mount("none", mnt_roots, "tmpfs", 0, NULL)) {
+		pr_perror("Unable to mount tmpfs in %s", mnt_roots);
+		return -1;
+	}
+	if (mount("none", mnt_roots, NULL, MS_PRIVATE, NULL))
+		return -1;
+
+	nsid = ns_ids;
+	while (nsid) {
+		if (nsid->nd != &mnt_ns_desc) {
+			nsid = nsid->next;
+			continue;
+		}
+
+		snprintf(path, sizeof(path), "%s/%d",
+				mnt_roots, nsid->id);
+
+		if (mkdir(path, 0600)) {
+			pr_perror("Unable to create %s", path);
+			return -1;
+		}
+		nsid = nsid->next;
+	}
+
+	return 0;
+}
+
 static int populate_mnt_ns(int ns_pid, struct mount_info *mis)
 {
 	struct mount_info *pms;
 
 	mntinfo_tree = NULL;
 	mntinfo = mis;
+
+	if (prepare_temporary_roots())
+		return -1;
 
 	pms = mnt_build_tree(mntinfo);
 	if (!pms)
@@ -1476,6 +1546,36 @@ static int populate_mnt_ns(int ns_pid, struct mount_info *mis)
 
 	mntinfo_tree = pms;
 	return mnt_tree_for_each(pms, do_mount_one);
+}
+
+int fini_mnt_ns()
+{
+	char *mnt_roots = get_mnt_roots(false);
+	int ret = 0;
+
+	if (mnt_roots == NULL)
+		return 0;
+
+	if (mount("none", mnt_roots, "none", MS_REC|MS_PRIVATE, NULL)) {
+		pr_perror("Can't remount root with MS_PRIVATE");
+		ret = 1;
+	}
+	/*
+	 * Don't exit after a first error, becuase this function
+	 * can be used to rollback in a error case.
+	 * Don't worry about MNT_DETACH, because files are restored after this
+	 * and nobody will not be restored from a wrong mount namespace.
+	 */
+	if (umount2(mnt_roots, MNT_DETACH)) {
+		pr_perror("Can't unmount %s", mnt_roots);
+		ret = 1;
+	}
+	if (rmdir(mnt_roots)) {
+		pr_perror("Can't remove the directory %s", mnt_roots);
+		ret = 1;
+	}
+
+	return ret;
 }
 
 int prepare_mnt_ns(int ns_pid)
