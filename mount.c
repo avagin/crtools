@@ -1414,23 +1414,21 @@ static char *get_mnt_roots(bool create)
 
 }
 
-static struct mount_info *read_mnt_ns_img(int ns_pid)
+static int collect_mnt_from_image(struct mount_info **pms, struct ns_id *nsid)
 {
 	MntEntry *me = NULL;
 	int img, ret;
-	struct mount_info *pms = NULL;
 
-	pr_info("Populating mount namespace\n");
-
-	img = open_image(CR_FD_MNTS, O_RSTR, ns_pid);
+	img = open_image(CR_FD_MNTS, O_RSTR, nsid->id);
 	if (img < 0)
-		return NULL;
+		return -1;
 
 	pr_debug("Reading mountpoint images\n");
 
 	while (1) {
 		struct mount_info *pm;
-		int len;
+		char root[PATH_MAX] = ".";
+		int len, root_len = 1;
 
 		ret = pb_read_one_eof(img, &me, PB_MNT);
 		if (ret <= 0)
@@ -1440,8 +1438,8 @@ static struct mount_info *read_mnt_ns_img(int ns_pid)
 		if (!pm)
 			goto err;
 
-		pm->next = pms;
-		pms = pm;
+		pm->next = *pms;
+		*pms = pm;
 
 		pm->mnt_id		= me->mnt_id;
 		pm->parent_mnt_id	= me->parent_mnt_id;
@@ -1460,8 +1458,10 @@ static struct mount_info *read_mnt_ns_img(int ns_pid)
 		if (!pm->root)
 			goto err;
 
-		pr_debug("\t\tGetting mpt for %d:%s\n", pm->mnt_id, me->mountpoint);
-		len  = strlen(me->mountpoint) + 2;
+		if (nsid->id != root_item->ids->mnt_ns_id)
+			root_len = snprintf(root, sizeof(root), "%s/%d/",
+						get_mnt_roots(false), nsid->id);
+		len  = strlen(me->mountpoint) + root_len + 1;
 		pm->mountpoint = xmalloc(len);
 		if (!pm->mountpoint)
 			goto err;
@@ -1472,8 +1472,10 @@ static struct mount_info *read_mnt_ns_img(int ns_pid)
 		 * that.
 		 */
 
-		pm->mountpoint[0] = '.';
-		strcpy(pm->mountpoint + 1, me->mountpoint);
+		strcpy(pm->mountpoint, root);
+		strcpy(pm->mountpoint + root_len, me->mountpoint);
+
+		pr_debug("\t\tGetting mpt for %d %s\n", pm->mnt_id, pm->mountpoint);
 
 		pr_debug("\t\tGetting source for %d\n", pm->mnt_id);
 		pm->source = xstrdup(me->source);
@@ -1492,16 +1494,77 @@ static struct mount_info *read_mnt_ns_img(int ns_pid)
 		mnt_entry__free_unpacked(me, NULL);
 
 	close(img);
-	return pms;
 
+	return 0;
 err:
-	while (pms) {
-		struct mount_info *pm = pms;
-		pms = pm->next;
-		mnt_entry_free(pm);
-	}
 	close_safe(&img);
+	return -1;
+}
+
+static struct mount_info *read_mnt_ns_img()
+{
+	struct mount_info *pms = NULL;
+	struct ns_id *nsid;
+	char *mnt_roots;
+
+	nsid = ns_ids;
+	while (nsid) {
+		if (nsid->nd != &mnt_ns_desc) {
+			nsid = nsid->next;
+			continue;
+		}
+
+		if (nsid->id != root_item->ids->mnt_ns_id) {
+			mnt_roots = get_mnt_roots(true);
+			if (mnt_roots == NULL)
+				return NULL;
+		}
+
+		if (collect_mnt_from_image(&pms, nsid))
+			goto err;
+
+		nsid = nsid->next;
+	}
+	return pms;
+err:
 	return NULL;
+}
+
+int restore_task_mnt_ns(struct ns_id *nsid, pid_t pid)
+{
+	char path[PATH_MAX];
+
+	if (root_item->ids->mnt_ns_id == nsid->id)
+		return 0;
+
+	if (nsid->pid != getpid()) {
+		int fd;
+
+		futex_wait_while_eq(&nsid->created, 0);
+		fd = open_proc(nsid->pid, "ns/mnt");
+		if (fd < 0)
+			return -1;
+
+		if (setns(fd, CLONE_NEWNS)) {
+			pr_perror("Unable to change mount namespace");
+			return -1;
+		}
+		return 0;
+	}
+
+	if (unshare(CLONE_NEWNS)) {
+		pr_perror("Unable to unshare mount namespace");
+		return -1;
+	}
+
+	snprintf(path, sizeof(path), "%s/%d/", get_mnt_roots(false), nsid->id);
+
+	if (cr_pivot_root(path))
+		return -1;
+
+	futex_set_and_wake(&nsid->created, 1);
+
+	return 0;
 }
 
 /*
