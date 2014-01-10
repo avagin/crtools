@@ -1251,10 +1251,10 @@ static int restore_task_with_children(void *_arg)
 		 * Thus -- mount proc at custom location for any new namespace
 		 */
 		if (mount_proc())
-			exit(1);
+			goto err;
 
 		if (root_prepare_shared())
-			exit(1);
+			goto err;
 	}
 
 	/*
@@ -1267,31 +1267,39 @@ static int restore_task_with_children(void *_arg)
 	ret = sigprocmask(SIG_BLOCK, &blockmask, NULL);
 	if (ret) {
 		pr_perror("%d: Can't block signals", current->pid.virt);
-		exit(1);
+		goto err;
 	}
 
 	if (prepare_mappings(pid))
-		exit(1);
+		goto err;
 
 	if ((!(ca->clone_flags & CLONE_FILES)) &&
 	    current->parent && current->parent->rst->fdt)
 		close_old_servie_fd(current->parent->rst->fdt->nr);
 
 	if (create_children_and_session())
-		exit(1);
+		goto err;
 
 	if (unmap_guard_pages())
-		exit(1);
+		goto err;
 
 	restore_pgid();
 
 	if (restore_finish_stage(CR_STATE_FORKING) < 0)
-		exit(1);
+		goto err;
+
+	if (current->parent == NULL && fini_mnt_ns())
+		exit (1);
 
 	if (current->state == TASK_HELPER)
 		return 0;
 
 	return restore_one_task(current->pid.virt, ca->core);
+err:
+	if (current->parent == NULL)
+		fini_mnt_ns();
+
+	exit(1);
 }
 
 static inline int stage_participants(int next_stage)
