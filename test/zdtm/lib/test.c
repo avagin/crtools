@@ -14,8 +14,6 @@
 #include <sys/stat.h>
 #include <string.h>
 #include <sys/prctl.h>
-#include <sys/types.h>
-#include <dirent.h>
 
 #include "zdtmtst.h"
 #include "lock.h"
@@ -92,36 +90,6 @@ void test_ext_init(int argc, char **argv)
 		exit(1);
 }
 
-static int close_fds(void)
-{
-	DIR *dir;
-	struct dirent *de;
-	int fd, ret;
-
-	dir = opendir("/proc/self/fd");
-	if (dir == NULL)
-		return -1;
-
-	while ((de = readdir(dir))) {
-		if (de->d_name[0] == '.')
-			continue;
-
-		ret = sscanf(de->d_name, "%d", &fd);
-		if (ret != 1) {
-			err("Can't parse %s\n", de->d_name);
-			return -1;
-		}
-
-		if (fd < 3)
-			continue;
-		close(fd);
-	}
-
-	closedir(dir);
-
-	return 0;
-}
-
 void test_init(int argc, char **argv)
 {
 	pid_t pid;
@@ -134,9 +102,6 @@ void test_init(int argc, char **argv)
 	sigemptyset(&sa.sa_mask);
 
 	parseargs(argc, argv);
-
-	if (close_fds())
-		exit(1);
 
 	val = getenv("ZDTM_NEWNS");
 	if (val) {
@@ -305,9 +270,6 @@ void test_init_ns(int argc, char **argv, unsigned long clone_flags,
 	}
 
 	parseargs(argc, argv);
-
-	if (close_fds())
-		exit(1);
 
 	/* setup_outfile() should be called in a target mount namespace */
 	if (!(clone_flags & CLONE_NEWNS))
