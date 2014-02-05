@@ -1,4 +1,4 @@
-
+#define _GNU_SOURCE 
 #include <stdlib.h>
 #include <stdio.h>
 #include <unistd.h>
@@ -105,10 +105,38 @@ int main(int argc, char **argv)
 		if (lrand48() % 2)
 			prot |= PROT_WRITE;
 
-		ret = mmap(p, size, prot, MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED, -1, 0);
-		if (ret == MAP_FAILED) {
-			err("%p-%p", p, p + size);
-			goto err;
+		switch (lrand48() % 3) {
+		case 2:
+		{
+			void *raddr;
+
+			size = PAGE_SIZE;
+			raddr = start + MEM_SIZE / 2;
+
+			if (p + size > raddr)
+				continue;
+
+			raddr += p - start;
+			ret = mremap(p, size, size, MREMAP_MAYMOVE | MREMAP_FIXED, raddr);
+			if (ret == MAP_FAILED) {
+				err("mremap(%p, %lx, %p) failed", p, size, raddr);
+				goto err;
+			}
+		/* fallthrough */
+		}
+		case 0:
+			ret = mmap(p, size, prot, MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED, -1, 0);
+			if (ret == MAP_FAILED) {
+				err("%p-%p", p, p + size);
+				goto err;
+			}
+			break;
+		case 1:
+			if (mprotect(p, size, prot)) {
+				err("mprotect(%p, %lx, %x)", p, size, prot);
+				goto err;
+			}
+			break;
 		}
 
 		if (!(prot & PROT_WRITE))
