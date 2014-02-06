@@ -13,13 +13,14 @@
 #include <fcntl.h>
 #include <signal.h>
 #include <sched.h>
+#include <sys/socket.h>
 
 #include "ns.h"
 
 extern int pivot_root(const char *new_root, const char *put_old);
 static int prepare_mntns()
 {
-	int dfd;
+	int dfd, fd;
 	char *root;
 
 	root = getenv("ZDTM_ROOT");
@@ -34,6 +35,16 @@ static int prepare_mntns()
 			return -1;
 		}
 
+		if (mount("none", "/", "none", MS_REC|MS_PRIVATE, NULL)) {
+			fprintf(stderr, "Can't remount root with MS_PRIVATE: %m\n");
+			return -1;
+		}
+
+		if (mount(root, root, NULL, MS_BIND | MS_REC, NULL)) {
+			fprintf(stderr, "Can't bind-mount root: %m\n");
+			return -1;
+		}
+
 		if (chdir(root)) {
 			fprintf(stderr, "chdir(%s) failed: %m\n", root);
 			return -1;
@@ -43,19 +54,11 @@ static int prepare_mntns()
 			return -1;
 		}
 
-		if (mount("none", "/", "none", MS_REC|MS_PRIVATE, NULL)) {
-			fprintf(stderr, "Can't remount root with MS_PRIVATE: %m\n");
-			return -1;
-		}
-
 		if (pivot_root(".", "./old")) {
 			fprintf(stderr, "pivot_root(., ./old) failed: %m\n");
 			return -1;
 		}
-		if (umount2("./old", MNT_DETACH)) {
-			fprintf(stderr, "umount(./old) failed: %m\n");
-			return -1;
-		}
+		chdir("/");
 		if (mkdir("proc", 0777) && errno != EEXIST) {
 			fprintf(stderr, "mkdir(proc) failed: %m\n");
 			return -1;
@@ -68,17 +71,27 @@ static int prepare_mntns()
 			fprintf(stderr, "mkdir(/dev) failed: %m\n");
 			return -1;
 		}
-		if (mknod("/dev/ptmx", 0666 | S_IFCHR, makedev(5, 2)) && errno != EEXIST) {
-			fprintf(stderr, "mknod(/dev/ptmx) failed: %m\n");
-			return -1;
-		}
-		chmod("/dev/ptmx", 0666);
+
 		if (mkdir("/dev/pts", 0755) && errno != EEXIST) {
 			fprintf(stderr, "mkdir(/dev/pts) failed: %m\n");
 			return -1;
 		}
-		if (mount("pts", "/dev/pts", "devpts", MS_MGC_VAL, NULL)) {
+		if (mount("pts", "/dev/pts", "devpts", MS_MGC_VAL, "newinstance,mode=666,ptmxmode=666")) {
 			fprintf(stderr, "mount(/dev/pts) failed: %m\n");
+			return -1;
+		}
+		fd = open("/dev/ptmx", O_WRONLY | O_CREAT, 0666);
+		if (fd < 0) {
+			fprintf(stderr, "Unable to open /dev/ptmx: %m\n");
+		}
+		close(fd);
+		if (mount("/dev/pts/ptmx", "/dev/ptmx", NULL, MS_BIND, NULL) < 0) {
+			fprintf(stderr, "Unable to bindmount /dev/ptmx: %m\n");
+			return -1;
+		}
+		if (umount2("./old", MNT_DETACH)) {
+			fprintf(stderr, "umount(./old) failed: %m\n");
+			sleep(1000);
 			return -1;
 		}
 		if (fchdir(dfd)) {
@@ -87,14 +100,6 @@ static int prepare_mntns()
 		}
 		close(dfd);
 
-	mkdir("/dev", 0777);
-	mknod("/dev/null", 0777 | S_IFCHR, makedev(1, 3));
-	chmod("/dev/null", 0777);
-	mkdir("/dev/net", 0777);
-	mknod("/dev/net/tun", 0777 | S_IFCHR, makedev(10, 200));
-	chmod("/dev/net/tun", 0777);
-	mknod("/dev/rtc", 0777 | S_IFCHR, makedev(254, 0));
-	chmod("/dev/rtc", 0777);
 	return 0;
 }
 
@@ -152,6 +157,7 @@ write_out:
 int ns_exec(void *_arg)
 {
 	struct ns_exec_args *args = (struct ns_exec_args *) _arg;
+	char buf[4096];
 	int ret;
 
 	close(args->status_pipe[0]);
@@ -166,6 +172,13 @@ int ns_exec(void *_arg)
 		return -1;
 	}
 	close(args->status_pipe[1]);
+	read(STATUS_FD, buf, sizeof(buf));
+	shutdown(STATUS_FD, SHUT_RD);
+	if (setuid(0) || setgid(0)) {
+		fprintf(stderr, "set*id failed: %m\n");
+		return -1;
+	}
+
 	if (prepare_mntns())
 		return -1;
 
@@ -285,29 +298,103 @@ int ns_init(int argc, char **argv)
 	exit(1);
 }
 
+static int construct_root()
+{
+	char *root;
+	int dfd;
+
+	root = getenv("ZDTM_ROOT");
+	if (!root) {
+		fprintf(stderr, "ZDTM_ROOT isn't set\n");
+		return -1;
+	}
+
+	dfd = open(".", O_RDONLY);
+	if (dfd == -1) {
+		fprintf(stderr, "open(.) failed: %m\n");
+		return -1;
+	}
+	if (chdir(root)) {
+		fprintf(stderr, "chdir(%s): %m\n", root);
+		return -1;
+	}
+
+	mkdir("dev", 0777);
+	chmod("dev", 0777);
+	mknod("dev/null", 0777 | S_IFCHR, makedev(1, 3));
+	chmod("dev/null", 0777);
+	mkdir("dev/net", 0777);
+	mknod("dev/net/tun", 0777 | S_IFCHR, makedev(10, 200));
+	chmod("dev/net/tun", 0777);
+	mknod("dev/rtc", 0777 | S_IFCHR, makedev(254, 0));
+	chmod("dev/rtc", 0777);
+
+	if (fchdir(dfd)) {
+		fprintf(stderr, "fchdir() failed: %m\n");
+		return -1;
+	}
+	close(dfd);
+
+	return 0;
+}
+
+#define ID_MAP "0 10000 100000"
 void ns_create(int argc, char **argv)
 {
 	pid_t pid;
+	char pname[PATH_MAX];
 	int ret, status;
 	struct ns_exec_args args;
-	int fd;
+	int fd, flags;
 
 	args.argc = argc;
 	args.argv = argv;
 
-	ret = pipe(args.status_pipe);
+	ret = socketpair(AF_UNIX, SOCK_SEQPACKET, 0, args.status_pipe);
 	if (ret) {
 		fprintf(stderr, "Pipe() failed %m\n");
 		exit(1);
 	}
-	pid = clone(ns_exec, args.stack_ptr,
-			CLONE_NEWPID | CLONE_NEWNS | CLONE_NEWUTS |
-			CLONE_NEWNET | CLONE_NEWIPC | SIGCHLD, &args);
+
+	flags = CLONE_NEWPID | CLONE_NEWNS | CLONE_NEWUTS |
+		CLONE_NEWNET | CLONE_NEWIPC | CLONE_NEWUSER | SIGCHLD;
+
+	if (construct_root())
+		exit(1);
+
+	pid = clone(ns_exec, args.stack_ptr, flags, &args);
 	if (pid < 0) {
 		fprintf(stderr, "clone() failed: %m\n");
 		exit(1);
 	}
+
 	close(args.status_pipe[1]);
+
+	snprintf(pname, sizeof(pname), "/proc/%d/uid_map", pid);
+	fd = open(pname, O_WRONLY);
+	if (fd < 0) {
+		fprintf(stderr, "open(%s): %m\n", pname);
+		exit(1);
+	}
+	if (write(fd, ID_MAP, sizeof(ID_MAP)) < 0) {
+		fprintf(stderr, "write(" ID_MAP "): %m\n");
+		exit(1);
+	}
+	close(fd);
+
+	snprintf(pname, sizeof(pname), "/proc/%d/gid_map", pid);
+	fd = open(pname, O_WRONLY);
+	if (fd < 0) {
+		fprintf(stderr, "open(%s): %m\n", pname);
+		exit(1);
+	}
+	if (write(fd, ID_MAP, sizeof(ID_MAP)) < 0) {
+		fprintf(stderr, "write(" ID_MAP "): %m\n");
+		exit(1);
+	}
+	close(fd);
+
+	shutdown(args.status_pipe[0], SHUT_WR);
 
 	status = 1;
 	ret = read(args.status_pipe[0], &status, sizeof(status));
