@@ -31,6 +31,7 @@ enum {
 	 */
 	CR_FD_UTSNS,
 	CR_FD_MNTS,
+	CR_FD_USERNS,
 
 	_CR_FD_IPCNS_FROM,
 	CR_FD_IPC_VAR,
