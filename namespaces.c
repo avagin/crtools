@@ -601,6 +601,51 @@ int dump_namespaces(struct pstree_item *item, unsigned int ns_flags)
 	return 0;
 }
 
+static int write_id_map(pid_t pid, UidGidExtent **extents, int n, char *id_map)
+{
+	char buf[PAGE_SIZE];
+	int off = 0, i;
+	int fd;
+
+	for (i = 0; i < n; i++)
+		off += snprintf(buf + off, sizeof(buf) - off,
+				"%d %d %d", extents[i]->first,
+					extents[i]->lower_first,
+					extents[i]->count);
+
+	fd = open_proc_rw(pid, "%s", id_map);
+	if (fd < 0)
+		return -1;
+	if (write(fd, buf, off) != off) {
+		pr_perror("Unable to write into %s\n", id_map);
+		close(fd);
+		return -1;
+	}
+	close(fd);
+
+	return 0;
+}
+
+int prepare_userns(struct pstree_item *item)
+{
+	UsernsEntry *e;
+	int fd, ret;
+
+	fd = open_image(CR_FD_USERNS, O_RSTR, item->ids->user_ns_id);
+	ret = pb_read_one(fd, &e, PB_USERNS);
+	close(fd);
+	if (ret < 0)
+		return -1;
+
+	if (write_id_map(item->pid.real, e->uid_map, e->n_uid_map, "uid_map"))
+		return -1;
+
+	if (write_id_map(item->pid.real, e->gid_map, e->n_gid_map, "gid_map"))
+		return -1;
+
+	return 0;
+}
+
 int prepare_namespace(struct pstree_item *item, unsigned long clone_flags)
 {
 	pid_t pid = item->pid.virt;

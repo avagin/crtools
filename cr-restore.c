@@ -1236,6 +1236,12 @@ static int restore_task_with_children(void *_arg)
 		if (restore_finish_stage(CR_STATE_RESTORE_NS) < 0)
 			exit(1);
 
+		/* UID and GID must be set after restoring /proc/PID/{uid,gid}_maps */
+		if (setuid(0) || setgid(0)) {
+			pr_perror("Unable to initialize id-s");
+			exit(1);
+		}
+
 		if (collect_mount_info(getpid()))
 			exit(1);
 
@@ -1481,6 +1487,9 @@ static int restore_root_task(struct pstree_item *init)
 	ret = fork_with_pid(init);
 	if (ret < 0)
 		return -1;
+
+	if ((current_ns_mask & CLONE_NEWUSER) && prepare_userns(init))
+		goto out;
 
 	pr_info("Wait until namespaces are created\n");
 	ret = restore_wait_inprogress_tasks();
