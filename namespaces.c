@@ -15,6 +15,7 @@
 
 #include "protobuf.h"
 #include "protobuf/ns.pb-c.h"
+#include "protobuf/userns.pb-c.h"
 
 static struct ns_desc *ns_desc_array[] = {
 	&net_ns_desc,
@@ -388,10 +389,112 @@ int gen_predump_ns_mask(void)
 	return 0;
 }
 
+static int parse_id_map(pid_t pid, char *name, UidGidExtent ***pb_exts)
+{
+	UidGidExtent *extents = NULL;
+	int len = 0, size = 0, fd, ret, i;
+	FILE *f;
+
+	fd = open_proc(pid, "%s", name);
+	if (fd < 0) {
+		pr_perror("Unable to open %s", name);
+		return -1;
+	}
+
+	f = fdopen(fd, "r");
+	if (f == NULL) {
+		close(fd);
+		return -1;
+	}
+
+	ret = -1;
+	while (1) {
+		UidGidExtent *ext;
+
+		if (len == size) {
+			UidGidExtent *t;
+
+			size = size * 2 + 1;
+			t = xrealloc(extents, size * sizeof(UidGidExtent));
+			if (t == NULL)
+				break;
+			extents = t;
+		}
+
+		ext = &extents[len];
+
+		uid_gid_extent__init(ext);
+		ret = fscanf(f, "%d %d %d", &ext->first,
+				&ext->lower_first, &ext->count);
+		if (ret != 3) {
+			if (errno != 0) {
+				pr_perror("Unable to parse extents");
+				ret = -1;
+			} else
+				ret = 0;
+			break;
+		}
+		pr_err("%d %d %d\n", ext->first, ext->lower_first, ext->count);
+		len++;
+	}
+
+	fclose(f);
+
+	if (ret)
+		goto err;
+
+	if (len) {
+		*pb_exts = xmalloc(sizeof(UidGidExtent *) * len);
+		if (*pb_exts == NULL)
+			goto err;
+
+		for (i = 0; i < len; i++)
+			*pb_exts[i] = &extents[i];
+	} else {
+		xfree(extents);
+		*pb_exts = NULL;
+	}
+
+	return len;
+err:
+	xfree(extents);
+	return -1;
+}
+
 static int dump_user_ns(pid_t pid, int ns_id)
 {
-	pr_err("User namesapces are not supported yet\n");
-	return -1;
+	UsernsEntry e = USERNS_ENTRY__INIT;
+	int fd, ret, exit_code = -1;
+
+	ret = parse_id_map(pid, "uid_map", &e.uid_map);
+	if (ret < 0)
+		goto err;
+	e.n_uid_map = ret;
+
+	ret = parse_id_map(pid, "gid_map", &e.gid_map);
+	if (ret < 0)
+		goto err;
+	e.n_gid_map = ret;
+
+	fd = open_image(CR_FD_USERNS, O_DUMP, ns_id);
+	if (fd < 0)
+		goto err;
+	ret = pb_write_one(fd, &e, PB_USERNS);
+	close(fd);
+	if (ret < 0)
+		goto err;
+
+	exit_code = 0;
+err:
+	if (e.uid_map) {
+		xfree(e.uid_map[0]);
+		xfree(e.uid_map);
+	}
+	if (e.gid_map) {
+		xfree(e.gid_map[0]);
+		xfree(e.gid_map);
+	}
+	return exit_code;
 }
 
 static int do_dump_namespaces(struct ns_id *ns)
