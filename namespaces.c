@@ -392,20 +392,12 @@ int gen_predump_ns_mask(void)
 static int parse_id_map(pid_t pid, char *name, UidGidExtent ***pb_exts)
 {
 	UidGidExtent *extents = NULL;
-	int len = 0, size = 0, fd, ret, i;
+	int len = 0, size = 0, ret, i;
 	FILE *f;
 
-	fd = open_proc(pid, "%s", name);
-	if (fd < 0) {
-		pr_perror("Unable to open %s", name);
+	f = fopen_proc(pid, "%s", name);
+	if (f == NULL)
 		return -1;
-	}
-
-	f = fdopen(fd, "r");
-	if (f == NULL) {
-		close(fd);
-		return -1;
-	}
 
 	ret = -1;
 	while (1) {
