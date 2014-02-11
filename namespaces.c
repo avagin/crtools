@@ -187,6 +187,11 @@ static unsigned int get_ns_id(int pid, struct ns_desc *nd)
 	sprintf(ns_path, "ns/%s", nd->str);
 	ret = readlinkat(proc_dir, ns_path, ns_id, sizeof(ns_id));
 	if (ret < 0) {
+		if (errno == ENOENT) {
+			/* The namespace is unsupported */
+			kid = 0;
+			goto out;
+		}
 		pr_perror("Can't readlink ns link");
 		return 0;
 	}
@@ -194,6 +199,7 @@ static unsigned int get_ns_id(int pid, struct ns_desc *nd)
 	kid = parse_ns_link(ns_id, ret, nd);
 	BUG_ON(!kid);
 
+out:
 	return generate_ns_id(pid, kid, nd);
 }
 
