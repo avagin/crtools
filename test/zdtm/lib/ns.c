@@ -309,6 +309,8 @@ static int construct_root()
 		return -1;
 	}
 
+	umask(0);
+
 	dfd = open(root, O_RDONLY);
 	if (dfd == -1) {
 		fprintf(stderr, "open(.) failed: %m\n");
@@ -316,14 +318,10 @@ static int construct_root()
 	}
 
 	mkdirat(dfd, "dev", 0777);
-	fchmodat(dfd, "dev", 0777, 0);
 	mknodat(dfd, "dev/null", 0777 | S_IFCHR, makedev(1, 3));
-	fchmodat(dfd, "dev/null", 0777, 0);
 	mkdirat(dfd, "dev/net", 0777);
 	mknodat(dfd, "dev/net/tun", 0777 | S_IFCHR, makedev(10, 200));
-	fchmodat(dfd, "dev/net/tun", 0777, 0);
 	mknodat(dfd, "dev/rtc", 0777 | S_IFCHR, makedev(254, 0));
-	fchmodat(dfd, "dev/rtc", 0777, 0);
 
 	close(dfd);
 
