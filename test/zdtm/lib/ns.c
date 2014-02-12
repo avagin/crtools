@@ -309,30 +309,22 @@ static int construct_root()
 		return -1;
 	}
 
-	dfd = open(".", O_RDONLY);
+	dfd = open(root, O_RDONLY);
 	if (dfd == -1) {
 		fprintf(stderr, "open(.) failed: %m\n");
 		return -1;
 	}
-	if (chdir(root)) {
-		fprintf(stderr, "chdir(%s): %m\n", root);
-		return -1;
-	}
 
-	mkdir("dev", 0777);
-	chmod("dev", 0777);
-	mknod("dev/null", 0777 | S_IFCHR, makedev(1, 3));
-	chmod("dev/null", 0777);
-	mkdir("dev/net", 0777);
-	mknod("dev/net/tun", 0777 | S_IFCHR, makedev(10, 200));
-	chmod("dev/net/tun", 0777);
-	mknod("dev/rtc", 0777 | S_IFCHR, makedev(254, 0));
-	chmod("dev/rtc", 0777);
+	mkdirat(dfd, "dev", 0777);
+	fchmodat(dfd, "dev", 0777, 0);
+	mknodat(dfd, "dev/null", 0777 | S_IFCHR, makedev(1, 3));
+	fchmodat(dfd, "dev/null", 0777, 0);
+	mkdirat(dfd, "dev/net", 0777);
+	mknodat(dfd, "dev/net/tun", 0777 | S_IFCHR, makedev(10, 200));
+	fchmodat(dfd, "dev/net/tun", 0777, 0);
+	mknodat(dfd, "dev/rtc", 0777 | S_IFCHR, makedev(254, 0));
+	fchmodat(dfd, "dev/rtc", 0777, 0);
 
-	if (fchdir(dfd)) {
-		fprintf(stderr, "fchdir() failed: %m\n");
-		return -1;
-	}
 	close(dfd);
 
 	return 0;
