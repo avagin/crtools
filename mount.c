@@ -1059,6 +1059,18 @@ static int do_new_mount(struct mount_info *mi)
 		}
 	}
 
+	if (tp->code == FSTYPE__DEVPTS) {
+		int ret;
+		char *opt;
+		ret = snprintf(NULL, 0, "newinstance,%s", mi->options);
+		opt = xmalloc(ret + 1);
+		if (opt == NULL)
+			return -1;
+		snprintf(opt, ret + 1, "newinstance,%s", mi->options);
+		xfree(mi->options);
+		mi->options = opt;
+	}
+
 	if (mount(src, mi->mountpoint, tp->name,
 			mi->flags & (~MS_SHARED), mi->options) < 0) {
 		pr_perror("Can't mount at %s", mi->mountpoint);
