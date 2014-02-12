@@ -614,6 +614,7 @@ static int write_id_map(pid_t pid, UidGidExtent **extents, int n, char *id_map)
 	fd = open_proc_rw(pid, "%s", id_map);
 	if (fd < 0)
 		return -1;
+	/* Defining a mapping is a one-time operation per namespace */
 	if (write(fd, buf, off) != off) {
 		pr_perror("Unable to write into %s\n", id_map);
 		close(fd);
