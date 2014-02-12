@@ -1237,7 +1237,7 @@ static int restore_task_with_children(void *_arg)
 			exit(1);
 
 		/* UID and GID must be set after restoring /proc/PID/{uid,gid}_maps */
-		if (setuid(0) || setgid(0)) {
+		if ((ca->clone_flags & CLONE_NEWUSER) && (setuid(0) || setgid(0))) {
 			pr_perror("Unable to initialize id-s");
 			exit(1);
 		}
