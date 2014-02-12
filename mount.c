@@ -1277,17 +1277,22 @@ static int cr_pivot_root(struct mount_info *mis)
 
 	pr_info("Move the root to %s\n", opts.root);
 
+	if (mount("none", "/", "none", MS_REC|MS_PRIVATE, NULL)) {
+		pr_perror("Can't remount root with MS_PRIVATE");
+		return -1;
+	}
+
+	if (mount(opts.root, opts.root, NULL, MS_REC|MS_BIND, NULL)) {
+		pr_perror("Can't remount root with MS_PRIVATE");
+		return -1;
+	}
+
 	if (chdir(opts.root)) {
 		pr_perror("chdir(%s) failed", opts.root);
 		return -1;
 	}
 	if (mkdtemp(put_root) == NULL) {
 		pr_perror("Can't create a temporary directory");
-		return -1;
-	}
-
-	if (mount("none", "/", "none", MS_REC|MS_PRIVATE, NULL)) {
-		pr_perror("Can't remount root with MS_PRIVATE");
 		return -1;
 	}
 
@@ -1305,6 +1310,8 @@ static int cr_pivot_root(struct mount_info *mis)
 	 */
 	if (premount_external(mis, put_root))
 		return -1;
+
+	return 0;
 
 	if (umount2(put_root, MNT_DETACH)) {
 		pr_perror("Can't umount %s", put_root);
