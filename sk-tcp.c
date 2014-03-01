@@ -333,10 +333,27 @@ static int dump_tcp_conn_state(struct inet_sk_desc *sk)
 	tse.outq_len = sk->wqlen;
 	tse.unsq_len = sk->uwqlen;
 	tse.has_unsq_len = true;
+
+	/* Don't account the fin packet. It doesn't countain real data. */
+	if (sk->state == TCP_FIN_WAIT1 ||
+	    sk->state == TCP_LAST_ACK ||
+	    sk->state == TCP_CLOSING) {
+		BUG_ON(tse.outq_len == 0);
+		tse.outq_len--;
+		tse.unsq_len = tse.unsq_len ? tse.unsq_len - 1 : 0;
+	}
+
 	ret = tcp_stream_get_queue(sk->rfd, TCP_SEND_QUEUE,
 			&tse.outq_seq, tse.outq_len, &out_buf);
 	if (ret < 0)
 		goto err_out;
+
+	/* outq_seq is adjusted due to not accointing the fin packet */
+	if (sk->state == TCP_FIN_WAIT1 ||
+	    sk->state == TCP_FIN_WAIT2 ||
+	    sk->state == TCP_LAST_ACK ||
+	    sk->state == TCP_CLOSING)
+		tse.outq_seq--;
 
 	/*
 	 * Initial options
@@ -586,6 +603,33 @@ static int restore_tcp_opts(int sk, TcpStreamEntry *tse)
 	return 0;
 }
 
+#define TCP_CMSG_SEND_FIN 1
+static int tcp_send_fin(int sk, int queue)
+{
+	struct msghdr msg = {0};
+	struct cmsghdr *cmsg;
+	char buf[CMSG_SPACE(0)];
+
+	if (setsockopt(sk, SOL_TCP, TCP_REPAIR_QUEUE, &queue, sizeof(queue)) < 0) {
+		pr_perror("Can't set repair queue");
+		return -1;
+	}
+
+	msg.msg_control = buf;
+	msg.msg_controllen = sizeof buf;
+	cmsg = CMSG_FIRSTHDR(&msg);
+	cmsg->cmsg_level = SOL_TCP;
+	cmsg->cmsg_type = TCP_CMSG_SEND_FIN;
+	cmsg->cmsg_len = CMSG_LEN(0);
+	msg.msg_controllen = cmsg->cmsg_len;
+	if (sendmsg(sk, &msg, 0) < 0) {
+		pr_perror("sendmsg");
+		return -1;
+	}
+
+	return 0;
+}
+
 static int restore_tcp_conn_state(int sk, struct inet_sk_info *ii)
 {
 	int ifd, aux;
@@ -624,6 +668,29 @@ static int restore_tcp_conn_state(int sk, struct inet_sk_info *ii)
 	if (tse->has_cork && tse->cork) {
 		aux = 1;
 		if (restore_opt(sk, SOL_TCP, TCP_CORK, &aux))
+			goto err_c;
+	}
+
+	if (ii->ie->state == TCP_LAST_ACK) {
+		if (tcp_send_fin(sk, TCP_RECV_QUEUE))
+			goto err_c;
+	}
+
+	/*
+	 * TCP_FIN_WAIT2 is restored ad TCP_FIN_WAIT1. The remote side has
+	 * seen it, so it will be acked by next received packet.
+	 */
+	if (ii->ie->state == TCP_FIN_WAIT1 ||
+	    ii->ie->state == TCP_FIN_WAIT2 ||
+	    ii->ie->state == TCP_LAST_ACK  ||
+	    ii->ie->state == TCP_CLOSING) {
+		if (tcp_send_fin(sk, TCP_SEND_QUEUE))
+			goto err_c;
+	}
+
+	if (ii->ie->state == TCP_CLOSE_WAIT ||
+	    ii->ie->state == TCP_CLOSING) {
+		if (tcp_send_fin(sk, TCP_RECV_QUEUE))
 			goto err_c;
 	}
 
