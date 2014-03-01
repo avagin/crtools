@@ -500,6 +500,7 @@ EOF
 
 		save_fds $PID  $ddump/dump.fd
 		save_maps $PID  $ddump/dump.maps
+		read
 		setsid $CRIU_CPT $dump_cmd $opts --file-locks --tcp-established $linkremap \
 			-x --evasive-devices -D $ddump -o dump.log -v4 -t $PID $args $ARGS $snapopt $postdump
 		retcode=$?
@@ -573,6 +574,7 @@ EOF
 			expr $tname : "static" > /dev/null && {
 				diff_maps $ddump/dump.maps $ddump/restore.maps || return 2
 			}
+			read
 		fi
 
 	done
