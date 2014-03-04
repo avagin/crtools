@@ -118,6 +118,11 @@ streaming/socket-tcp6
 static/socket-tcpbuf
 static/socket-tcpbuf-local
 static/socket-tcpbuf6
+static/socket-tcp-fin-wait1
+static/socket-tcp-fin-wait2
+static/socket-tcp-close-wait
+static/socket-tcp-last-ack
+static/socket-tcp-closing
 static/pty03
 static/mountpoints
 ns/static/session00
