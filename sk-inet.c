@@ -93,12 +93,12 @@ static int can_dump_inet_sk(const struct inet_sk_desc *sk, int proto)
 {
 	BUG_ON((sk->sd.family != AF_INET) && (sk->sd.family != AF_INET6));
 
-	if (sk->shutdown) {
+/*	if (sk->shutdown) {
 		pr_err("Can't dump shutdown inet socket %x\n",
 				sk->sd.ino);
 		return 0;
 	}
-
+*/
 	if (sk->type == SOCK_DGRAM) {
 		if (sk->wqlen != 0) {
 			pr_err("Can't dump corked dgram socket %x\n",
@@ -134,6 +134,11 @@ static int can_dump_inet_sk(const struct inet_sk_desc *sk, int proto)
 		}
 		break;
 	case TCP_ESTABLISHED:
+	case TCP_FIN_WAIT2:
+	case TCP_FIN_WAIT1:
+	case TCP_CLOSE_WAIT:
+	case TCP_LAST_ACK:
+	case TCP_CLOSING:
 		if (!opts.tcp_established_ok) {
 			pr_err("Connected TCP socket, consider using %s option.\n",
 					SK_EST_PARAM);
@@ -381,7 +386,13 @@ static struct file_desc_ops inet_desc_ops = {
 
 static inline int tcp_connection(InetSkEntry *ie)
 {
-	return (ie->proto == IPPROTO_TCP) && (ie->state == TCP_ESTABLISHED);
+	return ie->proto == IPPROTO_TCP &&
+			(ie->state == TCP_ESTABLISHED ||
+			 ie->state == TCP_FIN_WAIT1   ||
+			 ie->state == TCP_FIN_WAIT2   ||
+			 ie->state == TCP_CLOSE_WAIT  ||
+			 ie->state == TCP_LAST_ACK    ||
+			 ie->state == TCP_CLOSING);
 }
 
 static int collect_one_inetsk(void *o, ProtobufCMessage *base)
