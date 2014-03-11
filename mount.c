@@ -1723,7 +1723,7 @@ int mntns_collect_root(pid_t pid)
 	int ret;
 	char path[PATH_MAX + 1];
 
-	if (!(current_ns_mask & CLONE_NEWNS)) {
+	if (!(root_ns_mask & CLONE_NEWNS)) {
 		/*
 		 * If criu and tasks we dump live in the same mount
 		 * namespace, we can just open the root directory.
