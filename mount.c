@@ -427,7 +427,7 @@ static int collect_shared(struct mount_info *info)
 			}
 		}
 
-		if (need_master) {
+		if (need_master && m->parent) {
 			pr_err("Mount %d (master_id: %d shared_id: %d) "
 			       "has unreachable sharing\n", m->mnt_id,
 				m->master_id, m->shared_id);
@@ -996,11 +996,10 @@ static int propagate_siblings(struct mount_info *mi)
 	return 0;
 }
 
-static int propagate_mount(struct mount_info *mi)
+static void propagate_over_parents(struct mount_info *mi)
 {
 	struct mount_info *t;
 
-	propagate_siblings(mi);
 	umount_from_slaves(mi);
 
 	/* Propagate this mount to everyone from a parent group */
@@ -1009,14 +1008,24 @@ static int propagate_mount(struct mount_info *mi)
 		struct mount_info *c;
 
 		list_for_each_entry(c, &t->children, siblings) {
-			if (mounts_equal(mi, c, false)) {
-				pr_debug("\t\tPropogate %s\n", c->mountpoint);
-				c->mounted = true;
-				propagate_siblings(c);
-				umount_from_slaves(c);
-			}
+			if (!mounts_equal(mi, c, false))
+				continue;
+			pr_debug("\t\tPropogate %s\n", c->mountpoint);
+			c->mounted = true;
+			propagate_siblings(c);
+			umount_from_slaves(c);
 		}
 	}
+}
+
+static int propagate_mount(struct mount_info *mi)
+{
+	struct mount_info *t;
+
+	propagate_siblings(mi);
+
+	if (mi->parent)
+		propagate_over_parents(mi);
 
 	/*
 	 * FIXME Currently non-root mounts can be restored
@@ -1140,15 +1149,28 @@ static bool can_mount_now(struct mount_info *mi)
 	return false;
 }
 
+static int do_mount_root(struct mount_info *mi)
+{
+	if (restore_shared_options(mi, 0, mi->shared_id, mi->master_id))
+		return -1;
+
+	if (propagate_mount(mi))
+		return -1;
+
+	mi->mounted = true;
+
+	return 0;
+}
+
 static int do_mount_one(struct mount_info *mi)
 {
 	int ret;
 
-	if (!mi->parent)
-		return 0;
-
 	if (mi->mounted)
 		return 0;
+
+	if (!mi->parent)
+		return do_mount_root(mi);
 
 	if (!can_mount_now(mi)) {
 		pr_debug("Postpone slave %s\n", mi->mountpoint);
