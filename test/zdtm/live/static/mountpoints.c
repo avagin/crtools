@@ -111,6 +111,16 @@ done:
 		return 1;
 	}
 
+	mkdir(MPTS_ROOT"/dev/devpts", 0600);
+	if (mount("devpts", MPTS_ROOT"/dev/devpts", "devpts", 0, NULL) < 0) {
+		err("Can't bind-mount %s -> %s", MPTS_ROOT"/dev/tdir", MPTS_ROOT"/module");
+	}
+
+	mkdir(MPTS_ROOT"/dev/devpts_newinstance", 0600);
+	if (mount("devpts_newinstance", MPTS_ROOT"/dev/devpts_newinstance", "devpts", 0, "newinstance") < 0) {
+		err("Can't bind-mount %s -> %s", MPTS_ROOT"/dev/tdir", MPTS_ROOT"/module");
+	}
+
 	mkdir(MPTS_ROOT"/dev/non-root", 0600);
 	if (mount(MPTS_ROOT"/dev/non-root", MPTS_ROOT"/module", NULL, MS_BIND, NULL) < 0) {
 		err("Can't bind-mount %s -> %s", MPTS_ROOT"/dev/tdir", MPTS_ROOT"/module");
