@@ -6,7 +6,7 @@
 /* Kernel's limit */
 #define TERMIOS_NCC	19
 
-#define PTMX_PATH	"/dev/ptmx"
+#define PTMX_PATH	"/dev/pts/ptmx"
 #ifndef PTMX_MINOR
 # define PTMX_MINOR 2
 #endif
