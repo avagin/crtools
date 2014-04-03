@@ -3,6 +3,7 @@
 #include <errno.h>
 #include <string.h>
 #include <sys/types.h>
+#include <sys/mman.h>
 #include <sys/stat.h>
 #include <sys/vfs.h>
 #include <ctype.h>
@@ -708,6 +709,8 @@ int open_reg_by_id(u32 id)
 
 int get_filemap_fd(struct vma_area *vma)
 {
+	struct reg_file_info *rfi;
+
 	/*
 	 * Thevma->fd should have been assigned in collect_filemap
 	 *
@@ -715,6 +718,11 @@ int get_filemap_fd(struct vma_area *vma)
 	 */
 
 	BUG_ON(vma->fd == NULL);
+	rfi = container_of(vma->fd, struct reg_file_info, d);
+	if ((vma->e->prot & PROT_WRITE) && vma_area_is(vma, VMA_FILE_SHARED))
+		rfi->rfe->flags = O_RDWR;
+	else
+		rfi->rfe->flags = O_RDONLY;
 	return open_path(vma->fd, do_open_reg_noseek, NULL);
 }
 
