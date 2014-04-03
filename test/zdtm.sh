@@ -159,6 +159,7 @@ rtc
 tempfs
 maps007
 tempfs
+mountpoints
 "
 
 source $(readlink -f `dirname $0`/env.sh) || exit 1
