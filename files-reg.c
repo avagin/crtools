@@ -22,6 +22,7 @@
 #include "util.h"
 #include "fs-magic.h"
 #include "asm/atomic.h"
+#include "namespaces.h"
 
 #include "protobuf.h"
 #include "protobuf/regfile.pb-c.h"
@@ -548,6 +549,24 @@ int dump_one_reg_file(int lfd, u32 id, const struct fd_parms *p)
 		link = &_link;
 	} else
 		link = p->link;
+
+	if (p->mnt_id >= 0 && (root_ns_mask & CLONE_NEWNS)) {
+		struct ns_id *ns;
+
+		ns = get_ns_by_mnt_id(p->mnt_id);
+		if (ns == NULL) {
+			pr_err("The %d mount is unreachable\n", p->mnt_id);
+			return -1;
+		}
+
+		rfe.mnt_id = p->mnt_id;
+		rfe.has_mnt_id = true;
+		rfe.ns_id = ns->id;
+		rfe.has_ns_id = true;
+
+		if (mntns_collect_root(ns->pid))
+			return -1;
+	}
 
 	pr_info("Dumping path for %d fd via self %d [%s]\n",
 			p->fd, lfd, &link->name[1]);
