@@ -116,6 +116,7 @@ struct mount_info {
 	int		is_file;
 	bool		is_root;
 	struct mount_info *next;
+	struct ns_id	*nsid;
 
 	/* tree linkage */
 	struct mount_info *parent;

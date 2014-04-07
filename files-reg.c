@@ -23,6 +23,7 @@
 #include "fs-magic.h"
 #include "asm/atomic.h"
 #include "namespaces.h"
+#include "proc_parse.h"
 
 #include "protobuf.h"
 #include "protobuf/regfile.pb-c.h"
@@ -608,8 +609,21 @@ int open_path(struct file_desc *d,
 	struct reg_file_info *rfi;
 	int tmp;
 	char *orig_path = NULL;
+	struct mount_info *m;
 
 	rfi = container_of(d, struct reg_file_info, d);
+
+	if (rfi->rfe->mnt_id >= 0) {
+		m = lookup_mnt_id(rfi->rfe->mnt_id);
+		if (m == NULL) {
+			pr_err("Unable to look up the %d mntns: %s\n",
+						rfi->rfe->mnt_id, rfi->path);
+			return -1;
+		}
+
+		if (mntns_collect_root(m->nsid->pid))
+			return -1;
+	}
 
 	if (rfi->remap) {
 		mutex_lock(ghost_file_mutex);
@@ -674,7 +688,7 @@ static int do_open_reg_noseek_flags(struct reg_file_info *rfi, void *arg)
 	u32 flags = *(u32 *)arg;
 	int fd;
 
-	fd = open(rfi->path, flags);
+	fd = openat(mntns_root, rfi->path, flags);
 	if (fd < 0) {
 		pr_perror("Can't open file %s on restore", rfi->path);
 		return fd;
