@@ -450,7 +450,8 @@ static int do_dump_namespaces(struct ns_id *ns)
 
 }
 
-int dump_namespaces(struct pstree_item *item, unsigned int ns_flags)
+int dump_namespaces(struct pstree_item *item,
+			unsigned int ns_flags, bool before_tasks)
 {
 	struct pid *ns_pid = &item->pid;
 	struct ns_id *ns;
@@ -470,7 +471,7 @@ int dump_namespaces(struct pstree_item *item, unsigned int ns_flags)
 
 	pr_info("Dumping %d(%d)'s namespaces\n", ns_pid->virt, ns_pid->real);
 
-	if ((ns_flags & CLONE_NEWPID) && ns_pid->virt != 1) {
+	if (!before_tasks && (ns_flags & CLONE_NEWPID) && ns_pid->virt != 1) {
 		pr_err("Can't dump a pid namespace without the process init\n");
 		return -1;
 	}
@@ -484,26 +485,36 @@ int dump_namespaces(struct pstree_item *item, unsigned int ns_flags)
 			continue;
 		}
 
-		pid = fork();
-		if (pid < 0) {
-			pr_perror("Can't fork ns dumper");
-			return -1;
-		}
+		if (before_tasks) {
+			/*
+			 * Don't fork, because we are going to collect data,
+			 * which will be used for dumping tasks.
+			 */
+			if  ((ns->nd->cflag & CLONE_NEWNS) &&
+			     do_dump_namespaces(ns))
+				return -1;
+		} else {
+			pid = fork();
+			if (pid < 0) {
+				pr_perror("Can't fork ns dumper");
+				return -1;
+			}
 
-		if (pid == 0) {
-			ret = do_dump_namespaces(ns);
-			exit(ret);
-		}
+			if (pid == 0) {
+				ret = do_dump_namespaces(ns);
+				exit(ret);
+			}
 
-		ret = waitpid(pid, &status, 0);
-		if (ret != pid) {
-			pr_perror("Can't wait ns dumper");
-			return -1;
-		}
+			ret = waitpid(pid, &status, 0);
+			if (ret != pid) {
+				pr_perror("Can't wait ns dumper");
+				return -1;
+			}
 
-		if (!WIFEXITED(status) || WEXITSTATUS(status) != 0) {
-			pr_err("Namespaces dumping finished with error %d\n", status);
-			return -1;
+			if (!WIFEXITED(status) || WEXITSTATUS(status) != 0) {
+				pr_err("Namespaces dumping finished with error %d\n", status);
+				return -1;
+			}
 		}
 		ns = ns->next;
 	}

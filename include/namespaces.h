@@ -35,7 +35,8 @@ extern unsigned long root_ns_mask;
 extern const struct fdtype_ops nsfile_dump_ops;
 extern struct collect_image_info nsfile_cinfo;
 
-extern int dump_namespaces(struct pstree_item *item, unsigned int ns_flags);
+extern int dump_namespaces(struct pstree_item *item,
+				unsigned int ns_flags, bool before_tasks);
 extern int prepare_namespace(struct pstree_item *item, unsigned long clone_flags);
 extern int try_show_namespaces(int pid);
 
