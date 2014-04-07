@@ -1445,6 +1445,7 @@ static int collect_mnt_from_image(struct mount_info **pms, struct ns_id *nsid)
 		if (!pm)
 			goto err;
 
+		pm->nsid = nsid;
 		pm->next = *pms;
 		*pms = pm;
 
