@@ -17,7 +17,10 @@ struct ns_id {
 	struct ns_id *next;
 	futex_t created; /* boolean */
 	union {
-		struct mount_info *mount_info_head;
+		struct {
+		struct mount_info *mntinfo;
+		struct mount_info *mntinfo_tree;
+		} mnt;
 	};
 };
 extern struct ns_id *ns_ids;
