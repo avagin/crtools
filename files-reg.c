@@ -334,10 +334,12 @@ dump_entry:
 static void __rollback_link_remaps(bool do_unlink)
 {
 	struct link_remap_rlb *rlb, *tmp;
+	int mntns_root;
 
 	if (!opts.link_remap_ok)
 		return;
 
+	mntns_root = get_service_fd(ROOT_FD_OFF);
 	list_for_each_entry_safe(rlb, tmp, &link_remaps, list) {
 		list_del(&rlb->list);
 		if (do_unlink)
@@ -356,12 +358,15 @@ static int create_link_remap(char *path, int len, int lfd, u32 *idp)
 	RegFileEntry rfe = REG_FILE_ENTRY__INIT;
 	FownEntry fwn = FOWN_ENTRY__INIT;
 	struct link_remap_rlb *rlb;
+	int mntns_root;
 
 	if (!opts.link_remap_ok) {
 		pr_err("Can't create link remap for %s. "
 				"Use " LREMAP_PARAM " option.\n", path);
 		return -1;
 	}
+
+	mntns_root = get_service_fd(ROOT_FD_OFF);
 
 	/*
 	 * Linked remapping -- we create a hard link on a removed file
@@ -467,9 +472,9 @@ static inline bool nfs_silly_rename(char *rpath, const struct fd_parms *parms)
 
 static int check_path_remap(char *rpath, int plen, const struct fd_parms *parms, int lfd, u32 id)
 {
-	int ret;
-	struct stat pst;
 	const struct stat *ost = &parms->stat;
+	int ret, mntns_root;
+	struct stat pst;
 
 	if (ost->st_nlink == 0)
 		/*
@@ -491,6 +496,8 @@ static int check_path_remap(char *rpath, int plen, const struct fd_parms *parms,
 		pr_debug("Dump silly-rename linked remap for %x\n", id);
 		return dump_linked_remap(rpath + 1, plen - 1, ost, lfd, id);
 	}
+
+	mntns_root = get_service_fd(ROOT_FD_OFF);
 
 	ret = fstatat(mntns_root, rpath, &pst, 0);
 	if (ret < 0) {

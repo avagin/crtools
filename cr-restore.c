@@ -2548,6 +2548,9 @@ static int sigreturn_restore(pid_t pid, CoreEntry *core)
 
 	close_image_dir();
 
+	close_service_fd(PROC_FD_OFF);
+	close_service_fd(ROOT_FD_OFF);
+
 	__gcov_flush();
 
 	pr_info("task_args: %p\n"
