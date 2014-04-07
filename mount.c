@@ -128,6 +128,32 @@ static struct mount_info *__lookup_mnt_id(struct mount_info *list, int id)
 	return NULL;
 }
 
+int set_mntns_by_mnt_id(int mnt_id)
+{
+	struct ns_id *nsid;
+
+	for (nsid = ns_ids; nsid != NULL; nsid = nsid->next) {
+		if (nsid->nd != &mnt_ns_desc)
+			continue;
+
+		if (__lookup_mnt_id(nsid->mnt.mntinfo, mnt_id))
+			break;
+	}
+
+	if (nsid == NULL) {
+		pr_err("The %d mount is unreachable\n", mnt_id);
+		return -1;
+	}
+
+	mntinfo = nsid->mnt.mntinfo;
+	mntinfo_tree = nsid->mnt.mntinfo_tree;
+
+	if (mntns_collect_root(nsid->pid))
+		return -1;
+
+	return 0;
+}
+
 struct mount_info *lookup_mnt_id(unsigned int id)
 {
 	return __lookup_mnt_id(mntinfo, id);

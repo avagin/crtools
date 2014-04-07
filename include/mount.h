@@ -30,4 +30,6 @@ struct ns_id;
 extern int restore_task_mnt_ns(struct ns_id *nsid, pid_t pid);
 extern int fini_mnt_ns(void);
 
+int set_mntns_by_mnt_id(int mnt_id);
+
 #endif /* __CR_MOUNT_H__ */
