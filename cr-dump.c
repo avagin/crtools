@@ -1753,10 +1753,18 @@ int cr_dump_tasks(pid_t pid)
 	if (!glob_fdset)
 		goto err;
 
+	if (root_ns_mask)
+		if (dump_namespaces(root_item, root_ns_mask, true) < 0)
+			goto err;
+
 	for_each_pstree_item(item) {
 		if (dump_one_task(item))
 			goto err;
 	}
+
+	if (root_ns_mask)
+		if (dump_namespaces(root_item, root_ns_mask, false) < 0)
+			goto err;
 
 	if (dump_verify_tty_sids())
 		goto err;
@@ -1766,10 +1774,6 @@ int cr_dump_tasks(pid_t pid)
 
 	if (dump_pstree(root_item))
 		goto err;
-
-	if (root_ns_mask)
-		if (dump_namespaces(root_item, root_ns_mask) < 0)
-			goto err;
 
 	ret = cr_dump_shmem();
 	if (ret)
