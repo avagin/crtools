@@ -128,6 +128,21 @@ static struct mount_info *__lookup_mnt_id(struct mount_info *list, int id)
 	return NULL;
 }
 
+struct ns_id *get_ns_by_mnt_id(int id)
+{
+	struct ns_id *nsid;
+
+	for (nsid = ns_ids; nsid != NULL; nsid = nsid->next) {
+		if (nsid->nd != &mnt_ns_desc)
+			continue;
+
+		if (__lookup_mnt_id(nsid->mount_info_head, id))
+			break;
+	}
+
+	return nsid;
+}
+
 struct mount_info *lookup_mnt_id(unsigned int id)
 {
 	return __lookup_mnt_id(mntinfo, id);
