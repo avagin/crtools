@@ -615,8 +615,20 @@ int open_path(struct file_desc *d,
 	struct reg_file_info *rfi;
 	int tmp;
 	char *orig_path = NULL;
+	struct ns_id *ns;
 
 	rfi = container_of(d, struct reg_file_info, d);
+
+	if (rfi->rfe->ns_id >= 0) {
+		ns = lookup_ns_by_id(rfi->rfe->ns_id);
+		if (ns == NULL) {
+			pr_err("Unable to look up the %d mntns: %s\n", rfi->rfe->ns_id, rfi->path);
+			return -1;
+		}
+
+		if (mntns_collect_root(ns->pid))
+			return -1;
+	}
 
 	if (rfi->remap) {
 		mutex_lock(ghost_file_mutex);
@@ -681,7 +693,7 @@ static int do_open_reg_noseek_flags(struct reg_file_info *rfi, void *arg)
 	u32 flags = *(u32 *)arg;
 	int fd;
 
-	fd = open(rfi->path, flags);
+	fd = openat(mntns_root, rfi->path, flags);
 	if (fd < 0) {
 		pr_perror("Can't open file %s on restore", rfi->path);
 		return fd;
