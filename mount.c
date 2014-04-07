@@ -1741,6 +1741,8 @@ int mntns_collect_root(pid_t pid)
 	int ret;
 	char path[PATH_MAX + 1];
 
+	close_service_fd(ROOT_FD_OFF);
+
 	if (!(root_ns_mask & CLONE_NEWNS)) {
 		/*
 		 * If criu and tasks we dump live in the same mount
@@ -1786,8 +1788,9 @@ int mntns_collect_root(pid_t pid)
 	}
 
 set_root:
-	mntns_root = fd;
-	return 0;
+	mntns_root = install_service_fd(ROOT_FD_OFF, fd);
+	close(fd);
+	return mntns_root >= 0 ? 0 : -1;
 }
 
 struct ns_desc mnt_ns_desc = NS_DESC_ENTRY(CLONE_NEWNS, "mnt");
