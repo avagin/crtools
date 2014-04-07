@@ -240,6 +240,17 @@ static int collect_fds(pid_t pid, struct parasite_drain_fd *dfds)
 	return 0;
 }
 
+static int get_fd_mntid(int fd, int *mnt_id)
+{
+	struct fdinfo_common fdinfo = { .mnt_id = -1};
+
+	if (parse_fdinfo(fd, FD_TYPES__UND, NULL, &fdinfo))
+		return -1;
+
+	*mnt_id = fdinfo.mnt_id;
+	return 0;
+}
+
 static int dump_task_exe_link(pid_t pid, MmEntry *mm)
 {
 	struct fd_parms params = FD_PARMS_INIT;
@@ -254,8 +265,12 @@ static int dump_task_exe_link(pid_t pid, MmEntry *mm)
 		return -1;
 	}
 
-	if (fd_id_generate_special(&params.stat, &mm->exe_file_id))
+	if (get_fd_mntid(fd, &params.mnt_id))
+		return -1;
+
+	if (fd_id_generate_special(&params.stat, &mm->exe_file_id)) {
 		ret = dump_one_reg_file(fd, mm->exe_file_id, &params);
+	}
 
 	close(fd);
 	return ret;
@@ -279,6 +294,9 @@ static int dump_task_fs(pid_t pid, struct parasite_dump_misc *misc, struct cr_fd
 		return -1;
 	}
 
+	if (get_fd_mntid(fd, &p.mnt_id))
+		return -1;
+
 	if (fd_id_generate_special(&p.stat, &fe.cwd_id)) {
 		ret = dump_one_reg_file(fd, fe.cwd_id, &p);
 		if (ret < 0)
@@ -296,6 +314,9 @@ static int dump_task_fs(pid_t pid, struct parasite_dump_misc *misc, struct cr_fd
 		pr_perror("Can't stat root");
 		return -1;
 	}
+
+	if (get_fd_mntid(fd, &p.mnt_id))
+		return -1;
 
 	if (fd_id_generate_special(&p.stat, &fe.root_id)) {
 		ret = dump_one_reg_file(fd, fe.root_id, &p);
@@ -346,10 +367,14 @@ static int dump_filemap(pid_t pid, struct vma_area *vma_area,
 	BUG_ON(!vma_area->st);
 	p.stat = *vma_area->st;
 
+	if (get_fd_mntid(vma_area->vm_file_fd, &p.mnt_id))
+		return -1;
+
 	/* Flags will be set during restore in get_filemap_fd() */
 
-	if (fd_id_generate_special(&p.stat, &id))
+	if (fd_id_generate_special(&p.stat, &id)) {
 		ret = dump_one_reg_file(vma_area->vm_file_fd, id, &p);
+	}
 
 	vma->shmid = id;
 	return ret;
