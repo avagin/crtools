@@ -434,7 +434,7 @@ static int do_dump_namespaces(struct ns_id *ns)
 	case CLONE_NEWNS:
 		pr_info("Dump MNT namespace (mountpoints) %d via %d\n",
 				ns->id, ns->pid);
-		ret = dump_mnt_ns(ns->pid, ns->id);
+		ret = dump_mnt_ns(ns);
 		break;
 	case CLONE_NEWNET:
 		pr_info("Dump NET namespace info %d via %d\n",
