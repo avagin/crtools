@@ -38,6 +38,7 @@ static struct mount_info *mntinfo;
  * for umounting or path resolution.
  */
 static struct mount_info *mntinfo_tree;
+int mntns_root_pid = -1;
 int mntns_root = -1;
 
 static DIR *open_mountpoint(struct mount_info *pm);
@@ -1775,6 +1776,9 @@ int mntns_collect_root(pid_t pid)
 	int ret;
 	char path[PATH_MAX + 1];
 
+	if (mntns_root_pid == pid) /* The required root is already opened */
+		return 0;
+
 	close_service_fd(ROOT_FD_OFF);
 
 	if (!(root_ns_mask & CLONE_NEWNS)) {
@@ -1824,6 +1828,7 @@ int mntns_collect_root(pid_t pid)
 
 set_root:
 	mntns_root = install_service_fd(ROOT_FD_OFF, fd);
+	mntns_root_pid = pid;
 	close(fd);
 	return mntns_root >= 0 ? 0 : -1;
 }
