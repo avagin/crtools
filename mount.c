@@ -140,8 +140,10 @@ int set_mntns_by_mnt_id(int mnt_id)
 			break;
 	}
 
-	if (nsid == NULL)
+	if (nsid == NULL) {
+		pr_err("The %d mount is unreachable\n", mnt_id);
 		return -1;
+	}
 
 	mntinfo = nsid->mnt.mntinfo;
 	mntinfo_tree = nsid->mnt.mntinfo_tree;
@@ -1555,6 +1557,27 @@ err:
 	return NULL;
 }
 
+char *rst_get_mnt_root(int mnt_id)
+{
+	struct mount_info *m;
+	static char path[PATH_MAX] = "/";
+
+	if (!(root_ns_mask & CLONE_NEWNS))
+		return path;
+
+	m = lookup_mnt_id(mnt_id);
+	if (m == NULL)
+		return NULL;
+
+	if (m->nsid->pid == getpid())
+		return path;
+
+	snprintf(path, sizeof(path), "%s/%d/",
+			get_mnt_roots(false), m->nsid->id);
+
+	return path;
+}
+
 int restore_task_mnt_ns(struct ns_id *nsid, pid_t pid)
 {
 	char path[PATH_MAX];
@@ -1779,6 +1802,7 @@ int mntns_collect_root(pid_t pid)
 	pfd = open_pid_proc(pid);
 	ret = readlinkat(pfd, "root", path, sizeof(path) - 1);
 	if (ret < 0) {
+		pr_perror("Unable to read /proc/%d/root", pid);
 		close_pid_proc();
 		return ret;
 	}
