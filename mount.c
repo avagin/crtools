@@ -1781,9 +1781,14 @@ out:
 
 int mntns_collect_root(pid_t pid)
 {
+	static int mntns_root_pid = -1;
+
 	int fd, pfd;
 	int ret;
 	char path[PATH_MAX + 1];
+
+	if (mntns_root_pid == pid) /* The required root is already opened */
+		return 0;
 
 	close_service_fd(ROOT_FD_OFF);
 
@@ -1836,6 +1841,8 @@ set_root:
 	ret = 0;
 	if (install_service_fd(ROOT_FD_OFF, fd) < 0)
 		ret = -1;
+	else
+		mntns_root_pid = pid;
 	close(fd);
 	return ret;
 }
