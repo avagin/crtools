@@ -73,6 +73,7 @@ static int open_remap_ghost(struct reg_file_info *rfi,
 	struct ghost_file *gf;
 	GhostFileEntry *gfe = NULL;
 	int gfd, ifd, ghost_flags;
+	char *root, path[PATH_MAX];
 
 	rfe->remap_id &= ~REMAP_GHOST;
 	list_for_each_entry(gf, &ghost_files, list)
@@ -86,6 +87,10 @@ static int open_remap_ghost(struct reg_file_info *rfi,
 	 */
 
 	pr_info("Opening ghost file %#x for %s\n", rfe->remap_id, rfi->path);
+
+	root = rst_get_mnt_root(rfi->rfe->mnt_id);
+	if (root == NULL)
+		return -1;
 
 	gf = shmalloc(sizeof(*gf));
 	if (!gf)
@@ -120,9 +125,10 @@ static int open_remap_ghost(struct reg_file_info *rfi,
 	} else
 		ghost_flags = O_WRONLY | O_CREAT | O_EXCL;
 
-	gfd = open(gf->remap.path, ghost_flags, gfe->mode);
+	snprintf(path, sizeof(path), "%s/%s", root, gf->remap.path);
+	gfd = open(path, ghost_flags, gfe->mode);
 	if (gfd < 0) {
-		pr_perror("Can't open ghost file %s", gf->remap.path);
+		pr_perror("Can't open ghost file %s", path);
 		goto close_ifd;
 	}
 
