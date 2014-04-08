@@ -880,15 +880,16 @@ int dump_mnt_ns(struct ns_id *ns)
 		goto err;
 	}
 
-	if (mnt_build_tree(pm) == NULL)
+	ns->mnt.mntinfo = pm;
+
+	ns->mnt.mntinfo_tree = mnt_build_tree(pm);
+	if (ns->mnt.mntinfo_tree == NULL)
 		goto err;
 
 	if (validate_mounts(pm, true))
 		goto err;
 
 	pr_info("Dumping mountpoints\n");
-
-	ns->mount_info_head = pm;
 
 	do {
 		struct mount_info *n = pm->next;
