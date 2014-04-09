@@ -1533,6 +1533,8 @@ int mntns_collect_root(pid_t pid)
 	int ret;
 	char path[PATH_MAX + 1];
 
+	close_safe(&mntns_root);
+
 	if (!(current_ns_mask & CLONE_NEWNS)) {
 		/*
 		 * If criu and tasks we dump live in the same mount
