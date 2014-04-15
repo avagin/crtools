@@ -85,7 +85,7 @@ int collect_mount_info(pid_t pid)
 {
 	pr_info("Collecting mountinfo\n");
 
-	mntinfo = parse_mountinfo(pid);
+	mntinfo = parse_mountinfo(pid, NULL);
 	if (!mntinfo) {
 		pr_err("Parsing mountinfo %d failed\n", getpid());
 		return -1;
@@ -840,7 +840,7 @@ struct mount_info *collect_mntinfo(struct ns_id *ns)
 	if (mntns_collect_root(ns->pid) < 0)
 		return NULL;
 
-	pm = parse_mountinfo(ns->pid);
+	pm = parse_mountinfo(ns->pid, ns);
 	if (!pm) {
 		pr_err("Can't parse %d's mountinfo\n", ns->pid);
 		return NULL;
@@ -851,7 +851,6 @@ struct mount_info *collect_mntinfo(struct ns_id *ns)
 		goto err;
 
 	return pm;
-
 err:
 	while (pm) {
 		p = pm;
@@ -1473,6 +1472,7 @@ static int collect_mnt_from_image(struct mount_info **pms, struct ns_id *nsid)
 		if (!pm)
 			goto err;
 
+		pm->nsid = nsid;
 		pm->next = *pms;
 		*pms = pm;
 
