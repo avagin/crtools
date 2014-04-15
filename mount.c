@@ -110,9 +110,18 @@ static struct mount_info *__lookup_mnt_id(struct mount_info *list, int id)
 {
 	struct mount_info *m;
 
-	for (m = list; m != NULL; m = m->next)
+	for (m = list; m != NULL; m = m->next) {
+		/*
+		 * Kernel before 3.15 doesn't show mnt_id for file descriptors.
+		 * mnt_id isn't saved for files, if mntns isn't dumped.
+		 * In both these cases we have only one root, so here
+		 * is not matter which mount will be restured.
+		 */
+		if (id == -1)
+			return m;
 		if (m->mnt_id == id)
 			return m;
+	}
 
 	return NULL;
 }
