@@ -69,26 +69,14 @@ static inline int fsroot_mounted(struct mount_info *mi)
 	return is_root(mi->root);
 }
 
+static int __open_mountpoint(struct mount_info *pm, int mnt_fd);
 int open_mount(unsigned int s_dev)
 {
 	struct mount_info *i;
-	int mntns_root;
-
-	mntns_root = get_service_fd(ROOT_FD_OFF);
 
 	for (i = mntinfo; i != NULL; i = i->next)
-		if (s_dev == i->s_dev) {
-			if (mntns_root == -1) {
-				pr_debug("mpopen %s\n", i->mountpoint);
-				return open(i->mountpoint, O_RDONLY);
-			} else if (is_root_mount(i)) {
-				pr_debug("mpopen root\n");
-				return dup(mntns_root);
-			} else {
-				pr_debug("mpopen %d:%s\n", mntns_root, i->mountpoint + 1);
-				return openat(mntns_root, i->mountpoint + 1, O_RDONLY);
-			}
-		}
+		if (s_dev == i->s_dev)
+			return __open_mountpoint(i, -1);
 
 	return -ENOENT;
 }
