@@ -1856,7 +1856,7 @@ int collect_mnt_namespaces(void)
 {
 	struct mount_info *pm, *pms;
 	struct ns_id *ns;
-	int ret = -1;
+	int ret = -1, n = 0;
 
 	for (ns = ns_ids; ns; ns = ns->next) {
 		if (ns->pid == getpid()) {
@@ -1871,6 +1871,13 @@ int collect_mnt_namespaces(void)
 
 		if (!(ns->nd->cflag & CLONE_NEWNS))
 			continue;
+		n++;
+
+		if (n == 2 && check_mnt_id()) {
+			pr_err("Nested mount namespaces are not supported "
+				"without mnt_id in fdinfo\n");
+			return -1;
+		}
 
 		pr_info("Dump MNT namespace (mountpoints) %d via %d\n",
 				ns->id, ns->pid);
